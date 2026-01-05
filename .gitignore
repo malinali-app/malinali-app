@@ -61,3 +61,8 @@ assets/tgt_*.txt
 # Documentation files (optional - remove if you want to track them)
 # INTEGRATION_COMPLETE.md
 # TRANSLATION_DIRECTION_FIX.md
+fix_push_final.sh
+fix_push_immediate.sh
+fix_push_now.sh
+check_git_size.sh
+cleanup_git_history.sh
