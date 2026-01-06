@@ -1,6 +1,8 @@
 // Test semantic search performance on dataset samples
 // Run with: flutter test test/semantic_search_test.dart
 
+// ignore_for_file: avoid_print
+
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,7 +10,6 @@ import 'package:ml_algo/src/retrieval/hybrid_fts_searcher.dart';
 import 'package:ml_algo/src/retrieval/translation_pair.dart';
 import 'package:ml_algo/src/persistence/sqlite_neighbor_search_store.dart';
 import 'package:malinali/services/embedding_service.dart';
-import 'package:path_provider/path_provider.dart';
 
 Future<void> main() async {
   // Initialize Flutter test bindings
@@ -146,18 +147,14 @@ Future<void> main() async {
     for (var i = 0; i < semanticResults.length && i < 3; i++) {
       final result = semanticResults[i];
       print(
-        '    ${i + 1}. EN: "${result.englishText.substring(0, result.englishText.length > 60 ? 60 : result.englishText.length)}..."',
+        '    ${i + 1}. EN: "${result.sourceText.substring(0, result.sourceText.length > 60 ? 60 : result.sourceText.length)}..."',
       );
-      final frenchPreview = result.frenchText.length > 60
-          ? '${result.frenchText.substring(0, 60)}...'
-          : result.frenchText;
-      print('       FR: "$frenchPreview"');
     }
 
     // Check if top result is relevant
     if (semanticResults.isNotEmpty) {
       final topResult = semanticResults.first;
-      final isRelevant = _isRelevant(query, topResult.englishText);
+      final isRelevant = _isRelevant(query, topResult.sourceText);
       print('  Relevance: ${isRelevant ? "✅ RELEVANT" : "❌ NOT RELEVANT"}');
     }
   }
@@ -182,13 +179,13 @@ Future<void> main() async {
     for (var i = 0; i < hybridResults.length && i < 3; i++) {
       final result = hybridResults[i];
       print(
-        '    ${i + 1}. EN: "${result.englishText.substring(0, result.englishText.length > 60 ? 60 : result.englishText.length)}..."',
+        '    ${i + 1}. EN: "${result.sourceText.substring(0, result.sourceText.length > 60 ? 60 : result.sourceText.length)}..."',
       );
     }
 
     if (hybridResults.isNotEmpty) {
       final topResult = hybridResults.first;
-      final isRelevant = _isRelevant(query, topResult.englishText);
+      final isRelevant = _isRelevant(query, topResult.sourceText);
       print('  Relevance: ${isRelevant ? "✅ RELEVANT" : "❌ NOT RELEVANT"}');
     }
   }
@@ -343,8 +340,8 @@ Future<void> _createDataset(
 
     allTranslations.add(
       TranslationPair(
-        french: english,
-        english: fula,
+        source: english,
+        target: fula,
         embedding: embeddingVector.toList(),
       ),
     );
@@ -367,8 +364,8 @@ Future<void> _createDataset(
 
     allTranslations.add(
       TranslationPair(
-        french: french,
-        english: fula,
+        source: french,
+        target: fula,
         embedding: embeddingVector.toList(),
       ),
     );

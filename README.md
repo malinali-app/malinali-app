@@ -4,6 +4,13 @@ A simple Flutter app for local translation using hybrid FTS + semantic search.
 
 ![offline_translator_diagram.png](offline_translator_diagram.png)
 
+
+TODO: please dig how the multilingual embedding model is clustering our phrases
+
+TODO: explain how this lightweight app is different from the other, such as opennmt, ctranslate2, INMT-lite
+
+offline first, mobile friendly (flutter)
+
 ## Features
 
 - **Text Editor**: Multi-line text input using `re_editor`

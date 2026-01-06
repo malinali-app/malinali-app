@@ -205,8 +205,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "6d3faf769b2ac8addde1e09e6f0907d4d48eeaff"
-      resolved-ref: "6d3faf769b2ac8addde1e09e6f0907d4d48eeaff"
+      ref: add70b8212cb1ffd70138742a1c215235304e9e5
+      resolved-ref: add70b8212cb1ffd70138742a1c215235304e9e5
       url: "https://github.com/malinali-app/ml_algo"
     source: git
     version: "16.18.0"

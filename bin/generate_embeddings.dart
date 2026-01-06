@@ -24,9 +24,6 @@
 
 import 'dart:io';
 import 'package:args/args.dart';
-import 'package:ml_algo/src/persistence/sqlite_neighbor_search_store.dart';
-import 'package:ml_algo/src/retrieval/hybrid_fts_searcher.dart';
-import 'package:ml_algo/src/retrieval/translation_pair.dart';
 
 // Note: This requires the embedding service, which needs Flutter
 // For a pure Dart CLI tool, we'd need to refactor EmbeddingService
@@ -46,8 +43,18 @@ Future<void> main(List<String> args) async {
     ..addOption('english', abbr: 'e', help: 'Path to English source file')
     ..addOption('french', abbr: 'f', help: 'Path to French source file')
     ..addOption('fula', abbr: 't', help: 'Path to Fula target file')
-    ..addOption('output', abbr: 'o', help: 'Output database path', defaultsTo: 'translations.db')
-    ..addOption('searcher-id', abbr: 's', help: 'Searcher ID', defaultsTo: 'translations')
+    ..addOption(
+      'output',
+      abbr: 'o',
+      help: 'Output database path',
+      defaultsTo: 'translations.db',
+    )
+    ..addOption(
+      'searcher-id',
+      abbr: 's',
+      help: 'Searcher ID',
+      defaultsTo: 'translations',
+    )
     ..addFlag('help', abbr: 'h', help: 'Show this help');
 
   final results = parser.parse(args);
@@ -102,7 +109,9 @@ Future<void> main(List<String> args) async {
   }
 
   if (englishLines == null && frenchLines == null) {
-    throw Exception('At least one source file (--english or --french) is required');
+    throw Exception(
+      'At least one source file (--english or --french) is required',
+    );
   }
 
   print('');
@@ -114,4 +123,3 @@ Future<void> main(List<String> args) async {
   print('  flutter run');
   print('  (The app will automatically create the database on first run)');
 }
-

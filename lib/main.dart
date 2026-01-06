@@ -123,12 +123,12 @@ class _TranslationScreenState extends State<TranslationScreen> {
       }
 
       // Handle different translation directions
-      // Database structure: frenchText = English/French (source), englishText = Fula (target)
+      // Database structure: sourceText = English/French (source), targetText = Fula (target)
       List<TranslationResult> results;
       String resultSource = '';
 
       if (_sourceLang == 'Fula') {
-        // Fula → English/French: Search in englishText (Fula), return frenchText (English/French)
+        // Fula → English/French: Search in targetText (Fula), return sourceText (English/French)
         // Use semantic search since embeddings are stored for Fula
         print(
           'DEBUG: Fula → ${_targetLang}: Using semantic search (Fula embeddings)',
@@ -143,7 +143,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
         for (var i = 0; i < results.length; i++) {
           final r = results[i];
           print(
-            '  ${i + 1}. "${r.englishText}" → "${r.frenchText}" (distance: ${r.distance.toStringAsFixed(4)})',
+            '  ${i + 1}. "${r.targetText}" → "${r.sourceText}" (distance: ${r.distance.toStringAsFixed(4)})',
           );
         }
 
@@ -152,7 +152,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
         if (_targetLang == 'English') {
           // Filter to show only English results (heuristic: no French characters)
           results = results.where((r) {
-            final text = r.frenchText.toLowerCase();
+            final text = r.sourceText.toLowerCase();
             // Simple heuristic: English text typically doesn't have French-specific characters
             // This is not perfect but works for most cases
             return !text.contains('é') &&
@@ -165,7 +165,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
         } else if (_targetLang == 'French') {
           // Filter to show only French results (heuristic: has French characters or common French words)
           results = results.where((r) {
-            final text = r.frenchText.toLowerCase();
+            final text = r.sourceText.toLowerCase();
             // Simple heuristic: French text often has French-specific characters
             return text.contains('é') ||
                 text.contains('è') ||
@@ -183,19 +183,33 @@ class _TranslationScreenState extends State<TranslationScreen> {
         for (var i = 0; i < results.length; i++) {
           final r = results[i];
           print(
-            '  ${i + 1}. "${r.englishText}" → "${r.frenchText}" (distance: ${r.distance.toStringAsFixed(4)})',
+            '  ${i + 1}. "${r.targetText}" → "${r.sourceText}" (distance: ${r.distance.toStringAsFixed(4)})',
           );
         }
       } else {
-        // English/French → Fula: Search in frenchText (English/French), return englishText (Fula)
+        // English/French → Fula: Search in sourceText (English/French), return targetText (Fula)
         // Stem query for FTS to handle word variations
-        final stemmedQuery = QueryStemmer.stemQuery(inputText);
+        // Choose stemming strategy based on the current source language.
+        // - English: use Porter/Snowball stemming
+        // - French: conservative normalization (no aggressive stemming)
+        final queryLanguage = _sourceLang == 'English'
+            ? QueryLanguage.english
+            : QueryLanguage.french;
+        final stemmedQuery = QueryStemmer.stemQuery(inputText, queryLanguage);
 
-        // Use hybrid search: keyword filtering + semantic ranking
-        // FTS uses stemmed query, semantic uses original embedding
+        // Always run both:
+        // - Keyword (FTS) search over sourceText
+        // - Semantic search over Fula embeddings
+        //
+        // Then merge results, favouring:
+        // - Strong semantic similarity
+        // - Candidates that also match FTS
+        // - Outputs whose length is closer to the input length
+
+        // 1) Keyword search (FTS)
         final keywordResults = await _searcher!.searchByKeyword(
           stemmedQuery,
-          k: 5,
+          k: 20,
         );
         print(
           'DEBUG: Keyword search (stemmed: "$stemmedQuery") found ${keywordResults.length} results',
@@ -205,53 +219,127 @@ class _TranslationScreenState extends State<TranslationScreen> {
           for (var i = 0; i < keywordResults.length; i++) {
             final r = keywordResults[i];
             print(
-              '  ${i + 1}. "${r.frenchText}" → "${r.englishText}" (distance: ${r.distance.toStringAsFixed(4)})',
+              '  ${i + 1}. "${r.sourceText}" → "${r.targetText}" (distance: ${r.distance.toStringAsFixed(4)})',
             );
           }
         }
 
-        if (keywordResults.isNotEmpty) {
-          // FTS found results - use hybrid search with larger search radius
-          // Use stemmed query for FTS, original embedding for semantic
-          results = await _searcher!.searchHybrid(
-            keyword: stemmedQuery, // Use stemmed for FTS
-            embedding: queryEmbedding, // Original embedding for semantic
-            k: 5,
-            searchRadius: 10, // Increase radius for cross-language similarity
-          );
+        // Look for an exact phrase match in FTS (after simple normalization).
+        // If we find one, we will prefer it outright as the final answer.
+        TranslationResult? exactKeywordMatch;
+        final normalizedInput = inputText.trim().toLowerCase();
+        for (final r in keywordResults) {
+          final normalizedSource = r.sourceText.trim().toLowerCase();
+          if (normalizedSource == normalizedInput) {
+            exactKeywordMatch = r;
+            break;
+          }
+        }
 
-          // If hybrid still finds nothing, fallback to keyword-only
-          // (This can happen when embeddings are in different languages)
-          if (results.isEmpty) {
-            print('DEBUG: Hybrid found 0, using keyword-only results');
+        // 2) Semantic search (always run, regardless of FTS outcome)
+        final semanticResults = await _searcher!.searchBySemantic(
+          queryEmbedding,
+          k: 50,
+          searchRadius: 10,
+        );
+        print(
+          'DEBUG: Semantic search (embedding) found ${semanticResults.length} results',
+        );
+
+        // If an exact phrase match exists, keep it as the primary answer.
+        // We still ran semantic search for logging/inspection, but do not
+        // let it override a perfect text match.
+        if (exactKeywordMatch != null) {
+          results = [exactKeywordMatch];
+          resultSource = 'Keyword (exact phrase)';
+        } else {
+          // 3) Merge FTS + semantic with length-aware scoring.
+          //
+          // Strategy:
+          // - Use semantic distance as the base score (smaller is better)
+          // - Penalise candidates whose output length diverges a lot from
+          //   the input length
+          // - Give a mild boost to candidates that also appear in FTS
+          //
+          // Note: we only use semanticResults as the base set; FTS presence
+          // is a soft signal, not a hard filter.
+
+          if (semanticResults.isEmpty) {
+            // Fallback: if semantic search somehow fails completely,
+            // keep the existing keyword-only behaviour.
             results = keywordResults;
-            resultSource = 'FTS (keyword-only)';
+            resultSource = 'Keyword (no semantic results)';
           } else {
-            resultSource = 'Hybrid (FTS + Semantic)';
-            print(
-              'DEBUG: Hybrid search results (FTS filtered + Semantic ranked):',
-            );
-            for (var i = 0; i < results.length; i++) {
-              final r = results[i];
-              print(
-                '  ${i + 1}. "${r.frenchText}" → "${r.englishText}" (distance: ${r.distance.toStringAsFixed(4)})',
+            final ftsIndices = keywordResults.map((r) => r.pointIndex).toSet();
+
+            // Compute input length (in tokens)
+            final inputTokens = inputText
+                .split(RegExp(r'\s+'))
+                .where((w) => w.trim().isNotEmpty)
+                .toList();
+            final inputLen = inputTokens.length;
+
+            const alpha = 0.3; // strength of length penalty
+            const ftsBoost = 0.7; // multiplier < 1.0 to reward FTS matches
+
+            // Build scored candidates
+            final scored = <_ScoredResult>[];
+            for (final r in semanticResults) {
+              final inFts = ftsIndices.contains(r.pointIndex);
+
+              // Length of target text (Fula output)
+              final targetText = r.targetText;
+              final outputTokens = targetText
+                  .split(RegExp(r'\s+'))
+                  .where((w) => w.trim().isNotEmpty)
+                  .toList();
+              final outputLen = outputTokens.length;
+
+              final lenDiffRatio =
+                  (outputLen - inputLen).abs() / (inputLen + 1);
+              final lengthPenalty = 1 + alpha * lenDiffRatio;
+
+              var score = r.distance * lengthPenalty;
+              if (inFts) {
+                score *= ftsBoost;
+              }
+
+              scored.add(
+                _ScoredResult(
+                  result: r,
+                  score: score,
+                  inFts: inFts,
+                  lengthPenalty: lengthPenalty,
+                ),
               );
             }
-          }
-        } else {
-          // No FTS results, try semantic-only search
-          results = await _searcher!.searchBySemantic(
-            queryEmbedding,
-            k: 5,
-            searchRadius: 10,
-          );
-          resultSource = 'Semantic (embedding)';
-          print('DEBUG: Semantic-only search results:');
-          for (var i = 0; i < results.length; i++) {
-            final r = results[i];
-            print(
-              '  ${i + 1}. "${r.frenchText}" → "${r.englishText}" (distance: ${r.distance.toStringAsFixed(4)})',
-            );
+
+            // Sort by score (ascending: lower is better)
+            scored.sort((a, b) => a.score.compareTo(b.score));
+
+            // Take top-k semantic candidates after re-ranking
+            const k = 5;
+            results = scored.take(k).map((s) => s.result).toList();
+
+            // Avoid the words "FTS"/"keyword" here so UI shows semantic icon.
+            resultSource = 'Semantic (re-ranked with text match + length)';
+
+            print('DEBUG: Merged & re-ranked results (top $k):');
+            for (var i = 0; i < results.length; i++) {
+              final r = results[i];
+              final inFts = ftsIndices.contains(r.pointIndex);
+              final targetText = r.targetText;
+              final outputTokens = targetText
+                  .split(RegExp(r'\s+'))
+                  .where((w) => w.trim().isNotEmpty)
+                  .toList();
+              final outputLen = outputTokens.length;
+              print(
+                '  ${i + 1}. "${r.sourceText}" → "${r.targetText}" '
+                '(distance: ${r.distance.toStringAsFixed(4)}, '
+                'len_out: $outputLen, inFTS: $inFts)',
+              );
+            }
           }
         }
       }
@@ -264,23 +352,23 @@ class _TranslationScreenState extends State<TranslationScreen> {
       } else {
         // Determine which field to display based on target language
         // Database structure:
-        // - frenchText: contains English or French (source)
-        // - englishText: contains Fula (target)
+        // - sourceText: contains English or French (source)
+        // - targetText: contains Fula (target)
         String getTargetText(TranslationResult result) {
           if (_targetLang == 'Fula') {
-            return result.englishText; // Fula is in englishText
+            return result.targetText; // Fula is in targetText
           } else {
-            // Target is English or French, which is in frenchText
+            // Target is English or French, which is in sourceText
             // But we need to filter: if target is English, only show English results
-            // For now, return frenchText (will contain both English and French)
-            return result.frenchText;
+            // For now, return sourceText (will contain both English and French)
+            return result.sourceText;
           }
         }
 
         // Log the selected translation
         final selectedResult = results.first;
         print('DEBUG: Selected translation:');
-        print('  Source: "${selectedResult.frenchText}"');
+        print('  Source: "${selectedResult.sourceText}"');
         print('  Target: "${getTargetText(selectedResult)}"');
         print('  Distance: ${selectedResult.distance.toStringAsFixed(4)}');
         print('  Method: $resultSource');
@@ -291,19 +379,11 @@ class _TranslationScreenState extends State<TranslationScreen> {
         // Add method explanation
         String getMethodExplanation(String source) {
           if (source.contains('Hybrid')) {
-            return '🔍 Hybrid Search (FTS + Semantic)\n'
-                '   • FTS: Keyword matching (exact word matches)\n'
-                '   • Semantic: Meaning-based similarity (AI embeddings)\n'
-                '   • Results ranked by semantic similarity';
+            return '🔍 Hybrid (Keyword + Semantic)';
           } else if (source.contains('FTS') || source.contains('keyword')) {
-            return '🔤 Keyword Search (FTS)\n'
-                '   • Finds translations by matching keywords\n'
-                '   • Fast and precise for exact matches';
+            return '🔤 Keyword';
           } else if (source.contains('Semantic')) {
-            return '🧠 Semantic Search\n'
-                '   • Finds translations by meaning similarity\n'
-                '   • Uses AI embeddings to understand context\n'
-                '   • Works even without exact word matches';
+            return '✨ Semantic';
           }
           return 'Search method: $source';
         }
@@ -499,4 +579,19 @@ class _TranslationScreenState extends State<TranslationScreen> {
             ),
     );
   }
+}
+
+/// Internal helper for scoring and re-ranking translation results.
+class _ScoredResult {
+  final TranslationResult result;
+  final double score;
+  final bool inFts;
+  final double lengthPenalty;
+
+  const _ScoredResult({
+    required this.result,
+    required this.score,
+    required this.inFts,
+    required this.lengthPenalty,
+  });
 }

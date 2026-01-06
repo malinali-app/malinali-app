@@ -75,11 +75,8 @@ class EmbeddingService {
         final outputNames = ModelOutputInspector.getAllOutputNames(_modelPath!);
         print('Model output names: $outputNames');
         if (outputNames.isNotEmpty && !outputNames.contains('embeddings')) {
-          print('⚠️ WARNING: Model does not have output named "embeddings"');
-          print('   Actual output name(s): $outputNames');
-          print('   The fonnx package expects "embeddings" but the model has: ${outputNames.first}');
-          print('   This may cause "Invalid Output Name:embeddings" errors.');
-          print('   Solution: Re-export the model with output name "embeddings" or fork the fonnx package.');
+          //print('   The fonnx package expects "embeddings" but the model has: ${outputNames.first}');
+          //print('   This may cause "Invalid Output Name:embeddings" errors.');
         }
       } catch (e) {
         print('Could not inspect model output names: $e');
@@ -156,7 +153,9 @@ class EmbeddingService {
       if (e.toString().contains('Invalid Output Name:embeddings')) {
         // Get actual output names for better error message
         try {
-          final outputNames = ModelOutputInspector.getAllOutputNames(_modelPath!);
+          final outputNames = ModelOutputInspector.getAllOutputNames(
+            _modelPath!,
+          );
           throw Exception(
             'ONNX model output name mismatch.\n'
             'The fonnx package expects output name "embeddings", but your model has: ${outputNames.isEmpty ? "unknown" : outputNames.join(", ")}\n\n'

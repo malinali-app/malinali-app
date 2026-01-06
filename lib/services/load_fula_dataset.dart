@@ -63,7 +63,12 @@ Future<void> loadEnglishFrenchFulaDataset() async {
 
   // Step 4: Create translation pairs for BOTH English→Fula and French→Fula
   // We store embeddings for Fula (target language) so we can search from either source
-  final allTranslations = <TranslationPair>[];
+  // 
+  // Schema: TranslationPair uses generic names:
+  // - source = source text (can be English or French)
+  // - target = target text (Fula)
+  final englishTranslations = <TranslationPair>[];
+  final frenchTranslations = <TranslationPair>[];
 
   print('Creating English→Fula pairs...');
   for (var i = 0; i < englishLines.length; i++) {
@@ -75,10 +80,10 @@ Future<void> loadEnglishFrenchFulaDataset() async {
     // Generate embedding for Fula (target language)
     final embeddingVector = await embeddingService.generateEmbedding(fula);
 
-    allTranslations.add(
+    englishTranslations.add(
       TranslationPair(
-        french: english, // Store English in "french" field (source language)
-        english: fula, // Fula is the target
+        source: english, // Source: English
+        target: fula, // Target: Fula
         embedding: embeddingVector.toList(),
       ),
     );
@@ -101,10 +106,10 @@ Future<void> loadEnglishFrenchFulaDataset() async {
     // Generate embedding for Fula (target language)
     final embeddingVector = await embeddingService.generateEmbedding(fula);
 
-    allTranslations.add(
+    frenchTranslations.add(
       TranslationPair(
-        french: french, // French source
-        english: fula, // Fula target
+        source: french, // Source: French
+        target: fula, // Target: Fula
         embedding: embeddingVector.toList(),
       ),
     );
@@ -115,21 +120,22 @@ Future<void> loadEnglishFrenchFulaDataset() async {
     }
   }
 
-  print('✅ Created ${allTranslations.length} translation pairs');
-  print('   - ${englishLines.length} English→Fula');
-  print('   - ${frenchLines.length} French→Fula');
+  print('✅ Created ${englishTranslations.length + frenchTranslations.length} translation pairs');
+  print('   - ${englishTranslations.length} English→Fula');
+  print('   - ${frenchTranslations.length} French→Fula');
 
   // Step 5: Create searcher and save to database
-  // Searcher ID: 'fula' - just a name to identify this searcher in the database
-  // You can have multiple searchers in the same database:
-  //   - 'fula' for English/French→Fula
-  //   - 'fula-spanish' for Spanish→Fula (future)
+  // Combine all translations into one searcher
   print('Building searcher and saving to database...');
-  final searcher = await HybridFTSSearcher.createFromTranslations(
+  
+  final allTranslations = [...englishTranslations, ...frenchTranslations];
+  
+  // Create searcher (ml_algo uses generic source/target names)
+  await HybridFTSSearcher.createFromTranslations(
     store,
     allTranslations,
     digitCapacity: 8,
-    searcherId: 'fula', // Simple name: identifies this searcher in the database
+    searcherId: 'fula',
   );
   // Note: createFromTranslations already saves to database automatically
 

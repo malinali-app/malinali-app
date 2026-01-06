@@ -42,7 +42,7 @@ dependencies:
   ml_algo:
     git: 
       url: https://github.com/malinali-app/ml_algo
-      ref: 6d3faf769b2ac8addde1e09e6f0907d4d48eeaff
+      ref: add70b8212cb1ffd70138742a1c215235304e9e5
 
   ml_linalg: ^13.11.15
   ml_dataframe: ^1.6.0
