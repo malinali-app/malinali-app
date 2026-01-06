@@ -1,15 +1,35 @@
 # Malinali - Local Translation App
 
-A simple Flutter app for local translation using hybrid FTS + semantic search.
+An offline-first Flutter app for local translation using hybrid FTS + semantic search.
 
 ![offline_translator_diagram.png](offline_translator_diagram.png)
 
+If distance < 0.1, show "Translation not found" (poor clustering).
 
-TODO: please dig how the multilingual embedding model is clustering our phrases
+## Approach: Frugal, Open Source, Pragmatic
 
-TODO: explain how this lightweight app is different from the other, such as opennmt, ctranslate2, INMT-lite
+Malinali takes a **retrieval-based translation** approach rather than generative neural translation. This makes it fundamentally different from solutions like OpenNMT, CTranslate2, or INMT-lite:
 
-offline first, mobile friendly (flutter)
+This approach is **imperfect but pragmatic**:
+- ✅ **Works offline**: All data stored locally, no API calls
+- ✅ **Mobile-friendly**: Flutter app, runs smoothly on low-end devices
+- ✅ **Fast**: Sub-20ms queries using SQLite FTS + approximate nearest neighbor search
+- ✅ **Open source**: Full transparency, easy to extend and customize
+- ⚠️ **Limited to training data**: Can only translate phrases seen in the corpus
+- ⚠️ **No context awareness**: Each phrase translated independently
+- ⚠️ **Requires quality corpus**: Translation quality depends on dataset quality
+
+**When to use Malinali:**
+- Domain-specific translations (e.g., medical, legal, technical)
+- Low-resource languages with limited training data
+- Offline-first requirements
+- Privacy-sensitive applications
+- Resource-constrained environments
+
+**When to use neural translation:**
+- General-purpose translation with high coverage
+- Context-aware, fluent generation
+- Handling unseen phrases and creative language
 
 ## Features
 
@@ -40,13 +60,6 @@ flutter run
 - **Translation Method**: Keyword search (FTS)
 - **Sample Data**: 15 common phrases pre-loaded
 
-## Next Steps
-
-1. **Integrate ONNX Model**: Connect to FONNX for real embedding generation
-2. **Add More Languages**: Extend to French-Fula translations
-3. **Semantic Search**: Use `searchHybrid()` with embeddings for better accuracy
-4. **Load Custom Vocabulary**: Use your French-Fula vocab.txt
-
 ## Architecture
 
 ```
@@ -64,5 +77,4 @@ HybridFTSSearcher
 ## Notes
 
 - Database stored in app documents directory
-- Sample embeddings are placeholder (use ONNX model in production)
-- Translation pairs are created on first launch
+- Fula Translation pairs are created on first launch

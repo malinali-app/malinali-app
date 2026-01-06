@@ -45,7 +45,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
   bool _isLoading = true;
   bool _isTranslating = false;
   String _sourceLang = 'French';
-  String _targetLang = 'Fula';
+  String _targetLang = 'Fula'; // Default: French → Fula
   String? _error;
 
   @override
@@ -125,7 +125,12 @@ class _TranslationScreenState extends State<TranslationScreen> {
       // Handle different translation directions
       // Database structure: sourceText = English/French (source), targetText = Fula (target)
       List<TranslationResult> results;
+      List<TranslationResult> ftsResults = [];
+      List<TranslationResult> semanticResultsFinal = [];
+      bool hasExactFtsMatch = false;
       String resultSource = '';
+      // Track FTS indices to check if results have FTS backing (for distance threshold check)
+      Set<int> ftsIndices = <int>{};
 
       if (_sourceLang == 'Fula') {
         // Fula → English/French: Search in targetText (Fula), return sourceText (English/French)
@@ -178,7 +183,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
                 text.contains(' de ');
           }).toList();
         }
-        results = results.take(5).toList(); // Limit to 5 results
+        results = results.take(3).toList(); // Limit to 3 results
         print('DEBUG: After language filtering: ${results.length} results');
         for (var i = 0; i < results.length; i++) {
           final r = results[i];
@@ -186,6 +191,10 @@ class _TranslationScreenState extends State<TranslationScreen> {
             '  ${i + 1}. "${r.targetText}" → "${r.sourceText}" (distance: ${r.distance.toStringAsFixed(4)})',
           );
         }
+        // For Fula → English/French, we only have semantic search
+        ftsResults = [];
+        semanticResultsFinal = results;
+        hasExactFtsMatch = false;
       } else {
         // English/French → Fula: Search in sourceText (English/French), return targetText (Fula)
         // Stem query for FTS to handle word variations
@@ -214,21 +223,55 @@ class _TranslationScreenState extends State<TranslationScreen> {
         print(
           'DEBUG: Keyword search (stemmed: "$stemmedQuery") found ${keywordResults.length} results',
         );
-        if (keywordResults.isNotEmpty) {
-          print('DEBUG: FTS matches:');
-          for (var i = 0; i < keywordResults.length; i++) {
-            final r = keywordResults[i];
+
+        // Filter FTS results to match source language (English or French)
+        // This ensures we only get results from the correct source language
+        List<TranslationResult> filteredKeywordResults = keywordResults;
+        if (_sourceLang == 'English') {
+          // Filter to show only English results (heuristic: no French characters)
+          filteredKeywordResults = keywordResults.where((r) {
+            final text = r.sourceText.toLowerCase();
+            return !text.contains('é') &&
+                !text.contains('è') &&
+                !text.contains('ê') &&
+                !text.contains('à') &&
+                !text.contains('ç') &&
+                !text.contains('ù');
+          }).toList();
+        } else if (_sourceLang == 'French') {
+          // Filter to show only French results (heuristic: has French characters or common French words)
+          filteredKeywordResults = keywordResults.where((r) {
+            final text = r.sourceText.toLowerCase();
+            return text.contains('é') ||
+                text.contains('è') ||
+                text.contains('ê') ||
+                text.contains('à') ||
+                text.contains('ç') ||
+                text.contains('ù') ||
+                text.contains(' le ') ||
+                text.contains(' la ') ||
+                text.contains(' de ');
+          }).toList();
+        }
+        print(
+          'DEBUG: After source language filtering: ${filteredKeywordResults.length} FTS results (from ${keywordResults.length})',
+        );
+
+        if (filteredKeywordResults.isNotEmpty) {
+          print('DEBUG: FTS matches (filtered by source language):');
+          for (var i = 0; i < filteredKeywordResults.length; i++) {
+            final r = filteredKeywordResults[i];
             print(
               '  ${i + 1}. "${r.sourceText}" → "${r.targetText}" (distance: ${r.distance.toStringAsFixed(4)})',
             );
           }
         }
 
-        // Look for an exact phrase match in FTS (after simple normalization).
+        // Look for an exact phrase match in filtered FTS results (after simple normalization).
         // If we find one, we will prefer it outright as the final answer.
         TranslationResult? exactKeywordMatch;
         final normalizedInput = inputText.trim().toLowerCase();
-        for (final r in keywordResults) {
+        for (final r in filteredKeywordResults) {
           final normalizedSource = r.sourceText.trim().toLowerCase();
           if (normalizedSource == normalizedInput) {
             exactKeywordMatch = r;
@@ -246,164 +289,216 @@ class _TranslationScreenState extends State<TranslationScreen> {
           'DEBUG: Semantic search (embedding) found ${semanticResults.length} results',
         );
 
-        // If an exact phrase match exists, keep it as the primary answer.
-        // We still ran semantic search for logging/inspection, but do not
-        // let it override a perfect text match.
+        // Filter semantic results to match source language (English or French)
+        // This ensures we only get results from the correct source language
+        // Made more lenient to avoid filtering out valid results
+        List<TranslationResult> filteredSemanticResults = semanticResults;
+        if (_sourceLang == 'English') {
+          // Filter to show only English results (heuristic: no French characters)
+          // More lenient: only exclude if it clearly has French characters
+          filteredSemanticResults = semanticResults.where((r) {
+            final text = r.sourceText.toLowerCase();
+            // Exclude if it has French-specific characters
+            final hasFrenchChars =
+                text.contains('é') ||
+                text.contains('è') ||
+                text.contains('ê') ||
+                text.contains('à') ||
+                text.contains('ç') ||
+                text.contains('ù') ||
+                text.contains('ô') ||
+                text.contains('î') ||
+                text.contains('û');
+            return !hasFrenchChars;
+          }).toList();
+        } else if (_sourceLang == 'French') {
+          // Filter to show only French results (heuristic: has French characters or common French words)
+          // More lenient: check for French words with or without spaces, and French characters
+          filteredSemanticResults = semanticResults.where((r) {
+            final text = r.sourceText.toLowerCase();
+            // Check for French characters
+            final hasFrenchChars =
+                text.contains('é') ||
+                text.contains('è') ||
+                text.contains('ê') ||
+                text.contains('à') ||
+                text.contains('ç') ||
+                text.contains('ù') ||
+                text.contains('ô') ||
+                text.contains('î') ||
+                text.contains('û');
+            // Check for common French words (with or without spaces, at word boundaries)
+            final hasFrenchWords = RegExp(
+              r'\b(le|la|de|du|des|les|un|une|et|ou|est|sont|dans|pour|avec|sur|par|que|qui|quoi|comment|où|quand|pourquoi)\b',
+            ).hasMatch(text);
+            return hasFrenchChars || hasFrenchWords;
+          }).toList();
+        }
+        print(
+          'DEBUG: After source language filtering: ${filteredSemanticResults.length} semantic results (from ${semanticResults.length})',
+        );
+
+        // Store FTS indices for later checking if results have FTS backing
+        // Use filtered keyword results to only include results in the correct source language
+        ftsIndices = filteredKeywordResults.map((r) => r.pointIndex).toSet();
+
+        // Prepare FTS results (top 3)
+        // If we have an exact match, put it first
         if (exactKeywordMatch != null) {
-          results = [exactKeywordMatch];
-          resultSource = 'Keyword (exact phrase)';
+          final exactMatch = exactKeywordMatch;
+          ftsResults = [
+            exactMatch,
+            ...filteredKeywordResults
+                .where((r) => r.pointIndex != exactMatch.pointIndex)
+                .take(2),
+          ].toList();
+          hasExactFtsMatch = true;
         } else {
-          // 3) Merge FTS + semantic with length-aware scoring.
-          //
-          // Strategy:
-          // - Use semantic distance as the base score (smaller is better)
-          // - Penalise candidates whose output length diverges a lot from
-          //   the input length
-          // - Give a mild boost to candidates that also appear in FTS
-          //
-          // Note: we only use semanticResults as the base set; FTS presence
-          // is a soft signal, not a hard filter.
+          ftsResults = filteredKeywordResults.take(3).toList();
+          hasExactFtsMatch = false;
+        }
 
-          if (semanticResults.isEmpty) {
-            // Fallback: if semantic search somehow fails completely,
-            // keep the existing keyword-only behaviour.
-            results = keywordResults;
-            resultSource = 'Keyword (no semantic results)';
-          } else {
-            final ftsIndices = keywordResults.map((r) => r.pointIndex).toSet();
+        // Prepare semantic results (top 3, re-ranked)
+        semanticResultsFinal = [];
+        if (filteredSemanticResults.isNotEmpty) {
+          // Compute input length (in tokens)
+          final inputTokens = inputText
+              .split(RegExp(r'\s+'))
+              .where((w) => w.trim().isNotEmpty)
+              .toList();
+          final inputLen = inputTokens.length;
 
-            // Compute input length (in tokens)
-            final inputTokens = inputText
+          const alpha = 0.3; // strength of length penalty
+          const ftsBoost = 0.7; // multiplier < 1.0 to reward FTS matches
+
+          // Build scored candidates
+          final scored = <_ScoredResult>[];
+          for (final r in filteredSemanticResults) {
+            final inFts = ftsIndices.contains(r.pointIndex);
+
+            // Length of target text (Fula output)
+            final targetText = r.targetText;
+            final outputTokens = targetText
                 .split(RegExp(r'\s+'))
                 .where((w) => w.trim().isNotEmpty)
                 .toList();
-            final inputLen = inputTokens.length;
+            final outputLen = outputTokens.length;
 
-            const alpha = 0.3; // strength of length penalty
-            const ftsBoost = 0.7; // multiplier < 1.0 to reward FTS matches
+            final lenDiffRatio = (outputLen - inputLen).abs() / (inputLen + 1);
+            final lengthPenalty = 1 + alpha * lenDiffRatio;
 
-            // Build scored candidates
-            final scored = <_ScoredResult>[];
-            for (final r in semanticResults) {
-              final inFts = ftsIndices.contains(r.pointIndex);
-
-              // Length of target text (Fula output)
-              final targetText = r.targetText;
-              final outputTokens = targetText
-                  .split(RegExp(r'\s+'))
-                  .where((w) => w.trim().isNotEmpty)
-                  .toList();
-              final outputLen = outputTokens.length;
-
-              final lenDiffRatio =
-                  (outputLen - inputLen).abs() / (inputLen + 1);
-              final lengthPenalty = 1 + alpha * lenDiffRatio;
-
-              var score = r.distance * lengthPenalty;
-              if (inFts) {
-                score *= ftsBoost;
-              }
-
-              scored.add(
-                _ScoredResult(
-                  result: r,
-                  score: score,
-                  inFts: inFts,
-                  lengthPenalty: lengthPenalty,
-                ),
-              );
+            var score = r.distance * lengthPenalty;
+            if (inFts) {
+              score *= ftsBoost;
             }
 
-            // Sort by score (ascending: lower is better)
-            scored.sort((a, b) => a.score.compareTo(b.score));
+            scored.add(
+              _ScoredResult(
+                result: r,
+                score: score,
+                inFts: inFts,
+                lengthPenalty: lengthPenalty,
+              ),
+            );
+          }
 
-            // Take top-k semantic candidates after re-ranking
-            const k = 5;
-            results = scored.take(k).map((s) => s.result).toList();
+          // Sort by score (ascending: lower is better)
+          scored.sort((a, b) => a.score.compareTo(b.score));
 
-            // Avoid the words "FTS"/"keyword" here so UI shows semantic icon.
-            resultSource = 'Semantic (re-ranked with text match + length)';
+          // Take top-k semantic candidates after re-ranking
+          const k = 3;
+          semanticResultsFinal = scored.take(k).map((s) => s.result).toList();
 
-            print('DEBUG: Merged & re-ranked results (top $k):');
-            for (var i = 0; i < results.length; i++) {
-              final r = results[i];
-              final inFts = ftsIndices.contains(r.pointIndex);
-              final targetText = r.targetText;
-              final outputTokens = targetText
-                  .split(RegExp(r'\s+'))
-                  .where((w) => w.trim().isNotEmpty)
-                  .toList();
-              final outputLen = outputTokens.length;
-              print(
-                '  ${i + 1}. "${r.sourceText}" → "${r.targetText}" '
-                '(distance: ${r.distance.toStringAsFixed(4)}, '
-                'len_out: $outputLen, inFTS: $inFts)',
-              );
-            }
+          print('DEBUG: Semantic results (top $k):');
+          for (var i = 0; i < semanticResultsFinal.length; i++) {
+            final r = semanticResultsFinal[i];
+            final inFts = ftsIndices.contains(r.pointIndex);
+            print(
+              '  ${i + 1}. "${r.sourceText}" → "${r.targetText}" '
+              '(distance: ${r.distance.toStringAsFixed(4)}, inFTS: $inFts)',
+            );
           }
         }
+
+        // Store results for display (we'll use both FTS and semantic separately)
+        results =
+            ftsResults; // Keep for backward compatibility, but we'll build split view
+        resultSource = 'Split View (FTS + Semantic)';
+
+        print(
+          'DEBUG: FTS results: ${ftsResults.length}, Semantic results: ${semanticResultsFinal.length}',
+        );
       }
 
-      print('DEBUG: Final results: ${results.length} from $resultSource');
+      print(
+        'DEBUG: Final results: FTS=${ftsResults.length}, Semantic=${semanticResultsFinal.length}',
+      );
 
-      if (results.isEmpty) {
-        _outputController.text = 'No translation found';
-        print('DEBUG: No translation found');
-      } else {
-        // Determine which field to display based on target language
-        // Database structure:
-        // - sourceText: contains English or French (source)
-        // - targetText: contains Fula (target)
-        String getTargetText(TranslationResult result) {
-          if (_targetLang == 'Fula') {
-            return result.targetText; // Fula is in targetText
-          } else {
-            // Target is English or French, which is in sourceText
-            // But we need to filter: if target is English, only show English results
-            // For now, return sourceText (will contain both English and French)
-            return result.sourceText;
-          }
-        }
-
-        // Log the selected translation
-        final selectedResult = results.first;
-        print('DEBUG: Selected translation:');
-        print('  Source: "${selectedResult.sourceText}"');
-        print('  Target: "${getTargetText(selectedResult)}"');
-        print('  Distance: ${selectedResult.distance.toStringAsFixed(4)}');
-        print('  Method: $resultSource');
-
-        // Build output with method explanation
-        final buffer = StringBuffer();
-
-        // Add method explanation
-        String getMethodExplanation(String source) {
-          if (source.contains('Hybrid')) {
-            return '🔍 Hybrid (Keyword + Semantic)';
-          } else if (source.contains('FTS') || source.contains('keyword')) {
-            return '🔤 Keyword';
-          } else if (source.contains('Semantic')) {
-            return '✨ Semantic';
-          }
-          return 'Search method: $source';
-        }
-
-        buffer.writeln(getMethodExplanation(resultSource));
-        buffer.writeln('');
-
-        if (results.length == 1) {
-          buffer.writeln('${getTargetText(results.first)}');
+      // Always show split view, even if both are empty (will show "No match" for both)
+      // Determine which field to display based on translation direction
+      // Database structure:
+      // - sourceText: contains English or French (source)
+      // - targetText: contains Fula (target)
+      //
+      // For display, we want to show: source phrase → target translation
+      // This allows users to assess if the translation is likely correct
+      String getSourceText(TranslationResult result) {
+        if (_sourceLang == 'Fula') {
+          // When translating FROM Fula, the source phrase is in targetText (Fula)
+          return result.targetText;
         } else {
-          // Multiple results - display all with numbering
-          print('DEBUG: Showing ${results.length} results to user');
-          for (var i = 0; i < results.length; i++) {
-            final result = results[i];
-            buffer.writeln('${i + 1}. ${getTargetText(result)}');
-          }
+          // When translating FROM English/French, the source phrase is in sourceText
+          return result.sourceText;
         }
-
-        _outputController.text = buffer.toString().trim();
       }
+
+      String getTargetText(TranslationResult result) {
+        if (_targetLang == 'Fula') {
+          // When translating TO Fula, the target is in targetText
+          return result.targetText;
+        } else {
+          // When translating TO English/French, the target is in sourceText
+          return result.sourceText;
+        }
+      }
+
+      // Build split view output: FTS on left, Semantic on right
+      final buffer = StringBuffer();
+
+      // Helper to format a result line
+      String formatResult(TranslationResult result, int index, bool isExact) {
+        final source = getSourceText(result);
+        final target = getTargetText(result);
+        final prefix = isExact ? '⭐ ' : '${index + 1}. ';
+        return '$prefix$source → $target';
+      }
+
+      // Build FTS column (left)
+      buffer.writeln('🔤 Keyword');
+      if (ftsResults.isEmpty) {
+        buffer.writeln('No match');
+      } else {
+        for (var i = 0; i < ftsResults.length; i++) {
+          final isExact = hasExactFtsMatch && i == 0;
+          buffer.writeln(formatResult(ftsResults[i], i, isExact));
+        }
+      }
+
+      buffer.writeln('');
+      buffer.writeln('─────────────────────────────────────');
+      buffer.writeln('');
+
+      // Build Semantic column (right)
+      buffer.writeln('✨ Semantic');
+      if (semanticResultsFinal.isEmpty) {
+        buffer.writeln('No match');
+      } else {
+        for (var i = 0; i < semanticResultsFinal.length; i++) {
+          buffer.writeln(formatResult(semanticResultsFinal[i], i, false));
+        }
+      }
+
+      _outputController.text = buffer.toString().trim();
     } catch (e) {
       _outputController.text = 'Error: $e';
     } finally {
@@ -413,34 +508,46 @@ class _TranslationScreenState extends State<TranslationScreen> {
     }
   }
 
-  void _swapLanguages() {
-    setState(() {
-      // Allow all combinations: English ↔ French ↔ Fula
-      // Cycle through: English → French → Fula → English
-      if (_sourceLang == 'English' && _targetLang == 'Fula') {
-        _sourceLang = 'French';
-        // _targetLang stays 'Fula'
-      } else if (_sourceLang == 'French' && _targetLang == 'Fula') {
-        _sourceLang = 'Fula';
-        _targetLang = 'English';
-      } else if (_sourceLang == 'Fula' && _targetLang == 'English') {
-        _sourceLang = 'Fula';
-        _targetLang = 'French';
-      } else if (_sourceLang == 'Fula' && _targetLang == 'French') {
-        _sourceLang = 'English';
-        _targetLang = 'Fula';
-      } else {
-        // Fallback: just swap
-        final temp = _sourceLang;
-        _sourceLang = _targetLang;
-        _targetLang = temp;
-      }
+  void _onSourceLanguageChanged(String? newLang) {
+    if (newLang == null || newLang == _sourceLang) return;
 
-      // Swap input and output
-      final tempText = _inputController.text;
-      _inputController.text = _outputController.text;
-      _outputController.text = tempText;
-    });
+    // Prevent selecting the same language for both source and target
+    if (newLang == _targetLang) {
+      // Swap them instead
+      setState(() {
+        _targetLang = _sourceLang;
+        _sourceLang = newLang;
+        // Swap input and output
+        final tempText = _inputController.text;
+        _inputController.text = _outputController.text;
+        _outputController.text = tempText;
+      });
+    } else {
+      setState(() {
+        _sourceLang = newLang;
+      });
+    }
+  }
+
+  void _onTargetLanguageChanged(String? newLang) {
+    if (newLang == null || newLang == _targetLang) return;
+
+    // Prevent selecting the same language for both source and target
+    if (newLang == _sourceLang) {
+      // Swap them instead
+      setState(() {
+        _sourceLang = _targetLang;
+        _targetLang = newLang;
+        // Swap input and output
+        final tempText = _inputController.text;
+        _inputController.text = _outputController.text;
+        _outputController.text = tempText;
+      });
+    } else {
+      setState(() {
+        _targetLang = newLang;
+      });
+    }
   }
 
   @override
@@ -458,26 +565,37 @@ class _TranslationScreenState extends State<TranslationScreen> {
         title: const Text('Malinali'),
         actions: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _sourceLang,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.swap_horiz),
-                    onPressed: _swapLanguages,
-                    tooltip: 'Swap languages',
-                  ),
-                  Text(
-                    _targetLang,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Source language dropdown
+                DropdownButton<String>(
+                  value: _sourceLang,
+                  underline: Container(), // Remove default underline
+                  items: const [
+                    DropdownMenuItem(value: 'French', child: Text('French')),
+                    DropdownMenuItem(value: 'English', child: Text('English')),
+                    DropdownMenuItem(value: 'Fula', child: Text('Fula')),
+                  ],
+                  onChanged: _onSourceLanguageChanged,
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8.0),
+                  child: Icon(Icons.arrow_forward, size: 20),
+                ),
+                // Target language dropdown
+                DropdownButton<String>(
+                  value: _targetLang,
+                  underline: Container(), // Remove default underline
+                  items: const [
+                    DropdownMenuItem(value: 'French', child: Text('French')),
+                    DropdownMenuItem(value: 'English', child: Text('English')),
+                    DropdownMenuItem(value: 'Fula', child: Text('Fula')),
+                  ],
+                  onChanged: _onTargetLanguageChanged,
+                ),
+              ],
             ),
           ),
         ],
@@ -488,7 +606,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
           ? Center(child: Text('Error: $_error'))
           : Column(
               children: [
-                // Input editor
+                // Input editor (20% of space)
                 Expanded(
                   flex: 2,
                   child: Container(
@@ -517,15 +635,16 @@ class _TranslationScreenState extends State<TranslationScreen> {
                               fontSize: 16,
                               fontFamily: 'monospace',
                             ),
+                            autocompleteSymbols: false,
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
-                // Output editor (read-only)
+                // Output editor (read-only, 80% of space)
                 Expanded(
-                  flex: 2,
+                  flex: 8,
                   child: Container(
                     margin: const EdgeInsets.all(8.0),
                     decoration: BoxDecoration(
