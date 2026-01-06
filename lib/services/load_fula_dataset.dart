@@ -13,17 +13,17 @@ Future<List<String>> loadTextFileFromAssets(String assetPath) async {
 }
 
 /// Loads English-Fula and French-Fula translation pairs from text files.
-/// 
+///
 /// Creates ONE searcher that handles:
 /// - English → Fula
 /// - French → Fula
-/// 
+///
 /// Future: Can add Spanish → Fula to the same searcher, or create a new one.
-/// 
+///
 /// The "searcher ID" is just a name to identify this searcher in the database.
 /// You can have multiple searchers (e.g., 'english-french-fula', 'spanish-fula')
 /// in the same database file.
-/// 
+///
 /// NOTE: This is a convenience function for development. For production,
 /// consider pre-generating the database and including it in app assets.
 Future<void> loadEnglishFrenchFulaDataset() async {
@@ -33,18 +33,24 @@ Future<void> loadEnglishFrenchFulaDataset() async {
 
   // Step 2: Load the three text files
   print('Loading text files from assets...');
-  final englishLines = await loadTextFileFromAssets('assets/src_eng_license_free.txt');
-  final frenchLines = await loadTextFileFromAssets('assets/src_fra_license_free.txt');
-  final fulaLines = await loadTextFileFromAssets('assets/tgt_ful_license_free.txt');
+  final englishLines = await loadTextFileFromAssets(
+    'assets/src_eng_license_free.txt',
+  );
+  final frenchLines = await loadTextFileFromAssets(
+    'assets/src_fra_license_free.txt',
+  );
+  final fulaLines = await loadTextFileFromAssets(
+    'assets/tgt_ful_license_free.txt',
+  );
 
   // Verify all files have the same number of lines
-  if (englishLines.length != frenchLines.length || 
+  if (englishLines.length != frenchLines.length ||
       frenchLines.length != fulaLines.length) {
     throw Exception(
       'Files have different line counts: '
       'English: ${englishLines.length}, '
       'French: ${frenchLines.length}, '
-      'Fula: ${fulaLines.length}'
+      'Fula: ${fulaLines.length}',
     );
   }
 
@@ -58,26 +64,30 @@ Future<void> loadEnglishFrenchFulaDataset() async {
   // Step 4: Create translation pairs for BOTH English→Fula and French→Fula
   // We store embeddings for Fula (target language) so we can search from either source
   final allTranslations = <TranslationPair>[];
-  
+
   print('Creating English→Fula pairs...');
   for (var i = 0; i < englishLines.length; i++) {
     final english = englishLines[i].trim();
     final fula = fulaLines[i].trim();
-    
+
     if (english.isEmpty || fula.isEmpty) continue;
-    
+
     // Generate embedding for Fula (target language)
     final embeddingVector = await embeddingService.generateEmbedding(fula);
-    
-    allTranslations.add(TranslationPair(
-      french: english, // Store English in "french" field (source language)
-      english: fula,   // Fula is the target
-      embedding: embeddingVector.toList(),
-    ));
-    
+
+    allTranslations.add(
+      TranslationPair(
+        french: english, // Store English in "french" field (source language)
+        english: fula, // Fula is the target
+        embedding: embeddingVector.toList(),
+      ),
+    );
+
     // Progress indicator
     if ((i + 1) % 500 == 0) {
-      print('  Processed ${i + 1}/${englishLines.length} English→Fula pairs...');
+      print(
+        '  Processed ${i + 1}/${englishLines.length} English→Fula pairs...',
+      );
     }
   }
 
@@ -85,18 +95,20 @@ Future<void> loadEnglishFrenchFulaDataset() async {
   for (var i = 0; i < frenchLines.length; i++) {
     final french = frenchLines[i].trim();
     final fula = fulaLines[i].trim();
-    
+
     if (french.isEmpty || fula.isEmpty) continue;
-    
+
     // Generate embedding for Fula (target language)
     final embeddingVector = await embeddingService.generateEmbedding(fula);
-    
-    allTranslations.add(TranslationPair(
-      french: french, // French source
-      english: fula,  // Fula target
-      embedding: embeddingVector.toList(),
-    ));
-    
+
+    allTranslations.add(
+      TranslationPair(
+        french: french, // French source
+        english: fula, // Fula target
+        embedding: embeddingVector.toList(),
+      ),
+    );
+
     // Progress indicator
     if ((i + 1) % 500 == 0) {
       print('  Processed ${i + 1}/${frenchLines.length} French→Fula pairs...');
@@ -124,8 +136,7 @@ Future<void> loadEnglishFrenchFulaDataset() async {
   // Clean up
   embeddingService.dispose();
   store.close();
-  
+
   print('✅ Database saved to: $dbPath');
   print('✅ Ready to translate: English→Fula, French→Fula');
-  print('   (Future: Add Spanish→Fula by creating searcher with ID "fula-spanish")');
 }

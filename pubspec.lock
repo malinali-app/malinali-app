@@ -108,9 +108,9 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: HEAD
-      resolved-ref: f79261f8d55a40c9ab2bf757c61da9dd18446f25
-      url: "https://github.com/Telosnex/fonnx"
+      ref: d8f1cf65d681af9cafa404358d76d12b04f30da0
+      resolved-ref: d8f1cf65d681af9cafa404358d76d12b04f30da0
+      url: "https://github.com/malinali-app/fonnx"
     source: git
     version: "0.0.1"
   injector:
@@ -359,6 +359,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.12.1"
+  stemmer:
+    dependency: "direct main"
+    description:
+      name: stemmer
+      sha256: "4517e4303443f6ab353e7611b3bcab4821929e1f8faa73de0f119c72afbe26b9"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.2.0"
   stream_channel:
     dependency: transitive
     description:

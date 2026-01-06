@@ -5,6 +5,7 @@ import 'package:malinali/services/multilingual_tokenizer.dart';
 import 'package:fonnx/tokenizers/wordpiece_tokenizer.dart';
 import 'package:ml_linalg/vector.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:malinali/services/model_output_inspector.dart';
 import 'dart:io';
 
 /// Service for generating text embeddings using the ONNX model.
@@ -69,6 +70,22 @@ class EmbeddingService {
         maxInputTokens: 128,
       );
 
+      // Check model output name for debugging
+      try {
+        final outputNames = ModelOutputInspector.getAllOutputNames(_modelPath!);
+        print('Model output names: $outputNames');
+        if (outputNames.isNotEmpty && !outputNames.contains('embeddings')) {
+          print('⚠️ WARNING: Model does not have output named "embeddings"');
+          print('   Actual output name(s): $outputNames');
+          print('   The fonnx package expects "embeddings" but the model has: ${outputNames.first}');
+          print('   This may cause "Invalid Output Name:embeddings" errors.');
+          print('   Solution: Re-export the model with output name "embeddings" or fork the fonnx package.');
+        }
+      } catch (e) {
+        print('Could not inspect model output names: $e');
+        // Continue anyway - the error will be caught during inference
+      }
+
       // Initialize ONNX isolate manager
       _isolateManager = OnnxIsolateManager();
       await _isolateManager!.start(OnnxIsolateType.miniLm);
@@ -124,15 +141,40 @@ class EmbeddingService {
     }
 
     // Run ONNX inference
-    final embedding = await _isolateManager!.sendInference(
-      _modelPath!,
-      paddedTokens.take(maxLength).toList(),
-    );
+    try {
+      final embedding = await _isolateManager!.sendInference(
+        _modelPath!,
+        paddedTokens.take(maxLength).toList(),
+      );
 
-    // Convert to Vector (take first 384 dimensions)
-    return Vector.fromList(
-      embedding.take(384).map((e) => e.toDouble()).toList(),
-    );
+      // Convert to Vector (take first 384 dimensions)
+      return Vector.fromList(
+        embedding.take(384).map((e) => e.toDouble()).toList(),
+      );
+    } catch (e) {
+      // Check if this is the "Invalid Output Name:embeddings" error
+      if (e.toString().contains('Invalid Output Name:embeddings')) {
+        // Get actual output names for better error message
+        try {
+          final outputNames = ModelOutputInspector.getAllOutputNames(_modelPath!);
+          throw Exception(
+            'ONNX model output name mismatch.\n'
+            'The fonnx package expects output name "embeddings", but your model has: ${outputNames.isEmpty ? "unknown" : outputNames.join(", ")}\n\n'
+            'Solutions:\n'
+            '1. Re-export your ONNX model with output name "embeddings"\n'
+            '2. Fork the fonnx package and modify it to use the correct output name\n'
+            '3. Use a different model that has "embeddings" as the output name\n\n'
+            'Original error: $e',
+          );
+        } catch (inspectError) {
+          throw Exception(
+            'ONNX model output name mismatch. The fonnx package expects "embeddings" but your model has a different output name.\n'
+            'Original error: $e',
+          );
+        }
+      }
+      rethrow;
+    }
   }
 
   /// Disposes resources.

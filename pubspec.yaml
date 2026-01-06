@@ -36,8 +36,9 @@ dependencies:
   path_provider: ^2.1.1
   args: ^2.7.0
   fonnx:
-    git: 
-      url: https://github.com/Telosnex/fonnx
+    git:
+      url: https://github.com/malinali-app/fonnx
+      ref: d8f1cf65d681af9cafa404358d76d12b04f30da0
   ml_algo:
     git: 
       url: https://github.com/malinali-app/ml_algo
@@ -45,6 +46,7 @@ dependencies:
 
   ml_linalg: ^13.11.15
   ml_dataframe: ^1.6.0
+  stemmer: ^3.2.0
 
 dev_dependencies:
   flutter_test:

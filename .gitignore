@@ -66,3 +66,5 @@ fix_push_immediate.sh
 fix_push_now.sh
 check_git_size.sh
 cleanup_git_history.sh
+pubspec.lock
+macos/onnx_runtime
