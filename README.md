@@ -38,21 +38,21 @@ Translations may be imperfect, users need to review, evaluate, and select the mo
 - Domain-specific translations available for custom use (e.g., medical, legal, technical)
 
 ## How to run
-download 
+
+1. download 
 - https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/blob/main/onnx/model.onnx
 - https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/blob/main/tokenizer.json
 
-paste them in assets/models/
+2. paste them in assets/models/
 
-## Dataset
+3. run the app and either import your own data or use default demo
 
+## Demo Dataset
+
+less than a 1 000 lines from :
 License-free french/english -> fula dataset from [awesome_fula_nl_resources](https://github.com/flutter-painter/awesome_fula_nl_resources)
 
-## Current Implementation
-
-- Translation pairs can either :
-  - Be imported using an already populated sqlite db
-  - Be imported on first launch (embedding elements example assets can take up too __up to 30 minutes__)
+Full versions contains 15 000 french/english/fula and yields quick results
 
 ## Future Improvements
 
