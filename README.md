@@ -2,7 +2,8 @@
 
 An offline-first Flutter app for local translation using retrieval-based translation combining Full Text Search (FTS) and Semantic Search.
 
-![offline_translator_diagram.png](offline_translator_diagram.png)
+![screenshot_mum.png](screenshot_mum.png)
+
 
 ## Approach: Frugal, Open Source, Pragmatic
 
@@ -22,7 +23,6 @@ So we use a innovative low-tech solution.
 Combining the two and displaying the source text, provides user with as much translation information as possible.
 
 
-![screenshot_mum](screenshot_mum)
 
 This approach is **imperfect but pragmatic**; 
 
