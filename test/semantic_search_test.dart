@@ -35,7 +35,7 @@ Future<void> main() async {
   print('==================================================');
 
   // Use temp directory for test database (separate from prod)
-  final dbPath = '${tempDir.path}/test_fula_translations.db';
+  final dbPath = '${tempDir.path}/test_malinali.db';
 
   // Initialize embedding service
   final embeddingService = EmbeddingService();
@@ -52,8 +52,8 @@ Future<void> main() async {
     // Try production database path (real app directory, not mocked)
     final homeDir = Platform.environment['HOME'] ?? '';
     final possiblePaths = [
-      '$homeDir/Library/Containers/com.mlalgo.malinali/Data/Documents/fula_translations.db',
-      '$homeDir/Library/Application Support/malinali/fula_translations.db',
+      '$homeDir/Library/Containers/com.mlalgo.malinali/Data/Documents/malinali.db',
+      '$homeDir/Library/Application Support/malinali/malinali.db',
     ];
 
     String? prodDbPath;

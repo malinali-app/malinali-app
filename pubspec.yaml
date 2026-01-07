@@ -7,7 +7,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.10.1
+  sdk: ^3.7.2 #3.10.1
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -24,8 +24,8 @@ dependencies:
   args: ^2.7.0
   fonnx:
     git:
-      url: https://github.com/malinali-app/fonnx
-      ref: d8f1cf65d681af9cafa404358d76d12b04f30da0
+      url: https://github.com/malinali-app/fonnx # uses correct output name "last_hidden_state"
+      ref: 4a4b9b73c7ccb2dfb34eab5bafa89033fc41fb01
   ml_algo:
     git: 
       url: https://github.com/malinali-app/ml_algo
@@ -33,7 +33,8 @@ dependencies:
 
   ml_linalg: ^13.11.15
   ml_dataframe: ^1.6.0
-  stemmer: ^3.2.0
+  stemmer: any #^3.2.0
+  file_picker: ^8.1.4
 
 dev_dependencies:
   flutter_test:
@@ -44,7 +45,7 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^6.0.0
+  flutter_lints: any
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

@@ -7,8 +7,9 @@ import 'package:ml_algo/src/retrieval/translation_result.dart';
 import 'package:ml_linalg/vector.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:malinali/services/embedding_service.dart';
-import 'package:malinali/services/load_fula_dataset.dart';
 import 'package:malinali/services/query_stemmer.dart';
+import 'package:malinali/setup_screen.dart';
+import 'dart:io';
 
 void main() {
   runApp(const MalinaliApp());
@@ -26,8 +27,81 @@ class MalinaliApp extends StatelessWidget {
         useMaterial3: true,
       ),
       debugShowCheckedModeBanner: false,
-      home: const TranslationScreen(),
+      home: const InitialScreen(),
     );
+  }
+}
+
+/// Initial screen that checks if database exists, shows setup if not
+class InitialScreen extends StatefulWidget {
+  const InitialScreen({super.key});
+
+  @override
+  State<InitialScreen> createState() => _InitialScreenState();
+}
+
+class _InitialScreenState extends State<InitialScreen> {
+  bool _isChecking = true;
+  bool _hasDatabase = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkDatabase();
+  }
+
+  Future<void> _checkDatabase() async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final dbPath = '${appDir.path}/malinali.db';
+      final dbFile = File(dbPath);
+      final exists = await dbFile.exists();
+
+      if (mounted) {
+        setState(() {
+          _hasDatabase = exists;
+          _isChecking = false;
+        });
+
+        // If database exists, go to translation screen
+        if (exists) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => const TranslationScreen(),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isChecking = false;
+        });
+      }
+    }
+  }
+
+  void _onSetupComplete() {
+    // Navigate to translation screen when setup is complete
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) => const TranslationScreen(),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isChecking) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // Show setup screen if database doesn't exist
+    return SetupScreen(onComplete: _onSetupComplete);
   }
 }
 
@@ -91,22 +165,46 @@ class _TranslationScreenState extends State<TranslationScreen> {
       await embeddingService.initialize();
 
       final appDir = await getApplicationDocumentsDirectory();
-      final dbPath = '${appDir.path}/fula_translations.db';
+      final dbPath = '${appDir.path}/malinali.db';
+      final dbFile = File(dbPath);
+
+      // Check if database exists
+      if (!await dbFile.exists()) {
+        setState(() {
+          _error = 'Database not found. Please set up the database first.';
+          _isLoading = false;
+        });
+        return;
+      }
+
       final store = SQLiteNeighborSearchStore(dbPath);
 
-      // Check if Fula searcher already exists in database
+      // Load existing searcher from database
       HybridFTSSearcher? searcher;
       try {
         searcher = await HybridFTSSearcher.loadFromStore(store, 'fula');
         print('✅ Loaded existing Fula searcher from database');
       } catch (e) {
-        // Searcher doesn't exist, need to create it
-        print(
-          'Creating Fula translation database (this will take a while for 30k+ pairs)...',
-        );
-        await loadFrenchFulaDataset();
-        searcher = await HybridFTSSearcher.loadFromStore(store, 'fula');
-        print('✅ Fula translation database created and loaded');
+        final errorMessage = e.toString();
+        // Check if this is a "searcher not found" error
+        if (errorMessage.contains('not found') || 
+            errorMessage.contains('Searcher with ID')) {
+          setState(() {
+            _error = 'Searcher with ID "fula" not found in database.\n\n'
+                'This usually happens when:\n'
+                '1. The database was created with a different model version\n'
+                '2. The database needs to be regenerated\n\n'
+                'Solution: Please regenerate the database using the Setup screen.\n'
+                'Go back and select "Use Default Demo" or select your text files again.';
+            _isLoading = false;
+          });
+        } else {
+          setState(() {
+            _error = 'Failed to load searcher from database: $e';
+            _isLoading = false;
+          });
+        }
+        return;
       }
 
       setState(() {
@@ -519,7 +617,18 @@ class _TranslationScreenState extends State<TranslationScreen> {
         return '$prefix$source → $target';
       }
 
-      // Build FTS column (left)
+      // Build Semantic column (first - better results)
+      buffer.writeln('✨ Semantic');
+      if (semanticResultsFinal.isEmpty) {
+        buffer.writeln('No match');
+      } else {
+        for (var i = 0; i < semanticResultsFinal.length; i++) {
+          buffer.writeln(formatResult(semanticResultsFinal[i], i, false));
+        }
+      }
+
+      // Build FTS column (second - keyword results)
+      buffer.writeln('');
       buffer.writeln('🔤 Keyword');
       if (ftsResults.isEmpty) {
         buffer.writeln('No match');
@@ -527,17 +636,6 @@ class _TranslationScreenState extends State<TranslationScreen> {
         for (var i = 0; i < ftsResults.length; i++) {
           final isExact = hasExactFtsMatch && i == 0;
           buffer.writeln(formatResult(ftsResults[i], i, isExact));
-        }
-      }
-
-      // Build Semantic column (right)
-      buffer.writeln('');
-      buffer.writeln('✨ Semantic');
-      if (semanticResultsFinal.isEmpty) {
-        buffer.writeln('No match');
-      } else {
-        for (var i = 0; i < semanticResultsFinal.length; i++) {
-          buffer.writeln(formatResult(semanticResultsFinal[i], i, false));
         }
       }
 
@@ -561,13 +659,77 @@ class _TranslationScreenState extends State<TranslationScreen> {
     super.dispose();
   }
 
+  Future<void> _goToSetup() async {
+    // Delete the database so setup screen will be shown
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final dbPath = '${appDir.path}/malinali.db';
+      final dbFile = File(dbPath);
+      if (await dbFile.exists()) {
+        await dbFile.delete();
+        print('✅ Deleted database to trigger setup screen');
+      }
+    } catch (e) {
+      print('Warning: Could not delete database: $e');
+    }
+    
+    // Navigate back to initial screen (which will show setup)
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) => const InitialScreen(),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     Widget bodyContent;
     if (_isLoading) {
       bodyContent = const Center(child: CircularProgressIndicator());
     } else if (_error != null) {
-      bodyContent = Center(child: Text('Error: $_error'));
+      bodyContent = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.error_outline,
+                size: 64,
+                color: Colors.red,
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Error',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red,
+                    ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                onPressed: _goToSetup,
+                icon: const Icon(Icons.settings),
+                label: const Text('Go to Setup'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     } else {
       bodyContent = Column(
         children: [

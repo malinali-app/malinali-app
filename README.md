@@ -1,39 +1,48 @@
 # Malinali - Local Translation App
 
-An offline-first Flutter app for local translation using retrieval-based translation combining Full Text Search (FTS) and Semantic Search.
+An offline-first Flutter app for translation using retrieval-based translation combining Full Text Search (FTS) and Semantic Search on any datasets.
 
-## Approach: Frugal, Open Source, Pragmatic
+## Context
 
-Malinali takes a **retrieval-based translation** approach rather than generative neural translation. This makes it fundamentally different from offline solutions like OpenNMT, CTranslate2, or INMT-lite.
+While advanced translation models give good results (e.g. [nllb](https://huggingface.co/flutter-painter/nllb-fra-fuf-v2)), they are too heavy to run locally and incompatible with mobile OS...
 
-Since low-resource languages like fula lack the resources needed for these machine translation tools they yield  poor results.
+And while there are offline Machine Translations tools like OpenNMT, CTranslate2, or INMT-lite. To yield good results, they need a vast amount of data that is intrinsically not available for low-resource languages.
 
-While advanced translation models (e.g. [nllb](https://huggingface.co/flutter-painter/nllb-fra-fuf-v2)) give good results, they are too heavy to run locally and incompatible with mobile OS.
+As a result Malinali takes a diffrent approach and rely on a **retrieval-based translation** rather than generative neural translation. 
 
-So we came up with this innovative low-tech solution:
-
-1. Full Text Search based on SQLite
-2. Semantic Search using embeddings/vector, based on
+1. Semantic Search using embeddings/vector, based on
     - a tiny embedder [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) that runs using [fonnx](https://github.com/Telosnex/fonnx)
-    - a [forked version](https://github.com/malinali-app/ml_algo) of [ml_algo](https://pub.dev/packages/ml_algo) that stores embeddings in SQLite
+    - a [forked version](https://github.com/malinali-app/ml_algo) of [ml_algo](https://pub.dev/packages/ml_algo) that stores embeddings in SQLite and retrives the nearest using [RandomBinaryProjectionSearcher](https://pub.dev/documentation/ml_algo/latest/ml_algo/RandomBinaryProjectionSearcher-class.html)
+2. Full Text Search based on SQLite
 
-Combining the two and displaying the source text, provides user with as much translation information as possible.
+Combining the two techniques allows users to compare the two results, often illustrating that the semantic yields better results.
+The app also displays the source text linked with the translation found, allowing users to assess if context matches and thus if the translation is relevant.
 
-![screenshot_mum.png](screenshot_mum.png)
+![screenshot.png](screenshot.png)
 
-
-This approach is **imperfect but pragmatic**; 
+This approach is **imperfect but pragmatic**:
 
 - **Works offline**: All data stored locally, no API calls
 - **Mobile-friendly**: Flutter app, runs smoothly on low-end devices
 
+**Caveats**:
+Translations may be imperfect, users need to review, evaluate, and select the most relevant and options from the suggestions, provided they are in indeed accurate or else discard them and
+
 **When to use Malinali:**
+
 - Low-resource languages with limited training data
-- __Imperfect translation tolerated__
+- __translations Hands on assessment/selection__
 - Offline-first requirements
 - Privacy-sensitive applications
 - Resource-constrained environments
 - Domain-specific translations available for custom use (e.g., medical, legal, technical)
+
+## How to run
+download 
+- https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/blob/main/onnx/model.onnx
+- https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/blob/main/tokenizer.json
+
+paste them in assets/models/
 
 ## Dataset
 
@@ -41,24 +50,13 @@ License-free french/english -> fula dataset from [awesome_fula_nl_resources](htt
 
 ## Current Implementation
 
-- Fula Translation pairs are created on first launch, embedding french (source) elements takes __up to 30 minutes__
+- Translation pairs can either :
+  - Be imported using an already populated sqlite db
+  - Be imported on first launch (embedding elements example assets can take up too __up to 30 minutes__)
 
 ## Future Improvements
-### Better pickers
-- Allow users to select .db to avoid first init delay
-
-- Allow users to pick source/target translation texts to insert additional data or reset the app with their own custom data
 
 - Allow users to add additional language support
-
-### French-Specific Embedding Models
-
-For better French embedding quality, consider exploring French-specific models that work with `fonnx`:
-
-- **French-optimized models**: Models like `sentence-camembert-base` or `dangvantuan/french-document-embedding`
-
-Current model: `all-MiniLM-L6-v2` (monolingual, better for French-only comparisons than the previous multilingual model)
-
-## BUILDME
-flutter build macos
-hdiutil create -volname "Malinali" -srcfolder "build/macos/Build/Products/Release/malinali.app" -ov -format UDZO "malinali.dmg"
+- Explore a French-Specific Embedding Models
+  - `sentence-camembert-base` or `dangvantuan/french-document-embedding`
+- Allow users to use a wider range of embedding models 

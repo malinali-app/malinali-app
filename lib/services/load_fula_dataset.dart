@@ -53,7 +53,7 @@ Future<void> loadFrenchFulaDataset() async {
 
   // Step 3: Set up SQLite store
   final appDir = await getApplicationDocumentsDirectory();
-  final dbPath = '${appDir.path}/fula_translations.db';
+  final dbPath = '${appDir.path}/malinali.db';
   final store = SQLiteNeighborSearchStore(dbPath);
 
   // Step 4: Create translation pairs for BOTH English→Fula and French→Fula

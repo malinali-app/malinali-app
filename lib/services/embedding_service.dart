@@ -29,6 +29,7 @@ class EmbeddingService {
   String? _modelPath;
   String? _tokenizerPath;
   bool _isInitialized = false;
+  String? _detectedOutputName; // Store the actual output name from the model
 
   /// Initializes the embedding service.
   ///
@@ -68,17 +69,31 @@ class EmbeddingService {
         maxInputTokens: 128,
       );
 
-      // Check model output name for debugging
+      // Check model output name for informational purposes only
+      // Don't fail here - let fonnx handle it if there's a real issue
       try {
         final outputNames = ModelOutputInspector.getAllOutputNames(_modelPath!);
         print('Model output names: $outputNames');
-        if (outputNames.isNotEmpty && !outputNames.contains('embeddings')) {
-          //print('   The fonnx package expects "embeddings" but the model has: ${outputNames.first}');
-          //print('   This may cause "Invalid Output Name:embeddings" errors.');
+        
+        // Store the first output name for error messages later
+        if (outputNames.isNotEmpty) {
+          _detectedOutputName = outputNames.first;
+          
+          // Just log compatibility, don't throw
+          final hasEmbeddings = outputNames.contains('embeddings');
+          final hasSentenceEmbedding = outputNames.contains('sentence_embedding');
+          
+          if (hasEmbeddings) {
+            print('✅ Model has "embeddings" output');
+          } else if (hasSentenceEmbedding) {
+            print('✅ Model has "sentence_embedding" output');
+          } else {
+            print('ℹ️  Model output: ${outputNames.first} (will try to use it)');
+          }
         }
       } catch (e) {
-        print('Could not inspect model output names: $e');
-        // Continue anyway - the error will be caught during inference
+        print('⚠️  Could not inspect model output names: $e');
+        // Continue - don't fail initialization
       }
 
       // Initialize ONNX isolate manager
@@ -137,9 +152,11 @@ class EmbeddingService {
 
     // Run ONNX inference
     try {
+      // Use detected output name if available, otherwise let fonnx use its default
       final embedding = await _isolateManager!.sendInference(
         _modelPath!,
         paddedTokens.take(maxLength).toList(),
+        outputName: _detectedOutputName, // Pass detected output name for flexibility
       );
 
       // Convert to Vector (take first 384 dimensions)
@@ -147,28 +164,58 @@ class EmbeddingService {
         embedding.take(384).map((e) => e.toDouble()).toList(),
       );
     } catch (e) {
-      // Check if this is the "Invalid Output Name:embeddings" error
-      if (e.toString().contains('Invalid Output Name:embeddings')) {
-        // Get actual output names for better error message
-        try {
-          final outputNames = ModelOutputInspector.getAllOutputNames(
-            _modelPath!,
-          );
-          throw Exception(
-            'ONNX model output name mismatch.\n'
-            'The fonnx package expects output name "embeddings", but your model has: ${outputNames.isEmpty ? "unknown" : outputNames.join(", ")}\n\n'
-            'Solutions:\n'
-            '1. Re-export your ONNX model with output name "embeddings"\n'
-            '2. Fork the fonnx package and modify it to use the correct output name\n'
-            '3. Use a different model that has "embeddings" as the output name\n\n'
-            'Original error: $e',
-          );
-        } catch (inspectError) {
-          throw Exception(
-            'ONNX model output name mismatch. The fonnx package expects "embeddings" but your model has a different output name.\n'
-            'Original error: $e',
-          );
+      final errorStr = e.toString();
+      
+      // Check if this is an "Invalid Output Name" error (for either "embeddings" or "sentence_embedding")
+      if (errorStr.contains('Invalid Output Name')) {
+        // Use detected output name if available, otherwise get it again
+        List<String> outputNames;
+        if (_detectedOutputName != null) {
+          outputNames = [_detectedOutputName!];
+        } else {
+          try {
+            outputNames = ModelOutputInspector.getAllOutputNames(_modelPath!);
+          } catch (inspectError) {
+            outputNames = ['unknown'];
+          }
         }
+        
+        // Determine which output name the fonnx fork expects
+        String expectedOutput;
+        String forkName;
+        String recommendedFork;
+        if (errorStr.contains('sentence_embedding')) {
+          expectedOutput = 'sentence_embedding';
+          forkName = 'malinali-app/fonnx';
+          recommendedFork = 'Telosnex/fonnx (default)';
+        } else if (errorStr.contains('embeddings')) {
+          expectedOutput = 'embeddings';
+          forkName = 'default fonnx (Telosnex/fonnx)';
+          recommendedFork = 'malinali-app/fonnx';
+        } else {
+          expectedOutput = 'unknown';
+          forkName = 'fonnx';
+          recommendedFork = 'Check model output name';
+        }
+        
+        final actualOutput = outputNames.isNotEmpty ? outputNames.first : 'unknown';
+        
+        throw Exception(
+          'ONNX model output name mismatch!\n\n'
+          'Current fonnx fork: $forkName\n'
+          'Expected output name: "$expectedOutput"\n'
+          'Your model has: "$actualOutput"\n\n'
+          'Quick Fix:\n'
+          '1. Open pubspec.yaml\n'
+          '2. Switch to the correct fonnx fork:\n'
+          '   - If your model has "embeddings": use Telosnex/fonnx (default)\n'
+          '   - If your model has "sentence_embedding": use malinali-app/fonnx\n'
+          '3. Run: flutter pub get\n'
+          '4. Restart the app\n\n'
+          'Alternative: Re-export your model with output name "$expectedOutput"\n\n'
+          'All model outputs: ${outputNames.join(", ")}\n'
+          'Original error: $e',
+        );
       }
       rethrow;
     }
