@@ -26,35 +26,30 @@ Future<List<String>> loadTextFileFromAssets(String assetPath) async {
 ///
 /// NOTE: This is a convenience function for development. For production,
 /// consider pre-generating the database and including it in app assets.
-Future<void> loadEnglishFrenchFulaDataset() async {
+Future<void> loadFrenchFulaDataset() async {
   // Step 1: Initialize EmbeddingService
   final embeddingService = EmbeddingService();
   await embeddingService.initialize();
 
   // Step 2: Load the three text files
   print('Loading text files from assets...');
-  final englishLines = await loadTextFileFromAssets(
-    'assets/src_eng_license_free.txt',
-  );
-  final frenchLines = await loadTextFileFromAssets(
-    'assets/src_fra_license_free.txt',
-  );
-  final fulaLines = await loadTextFileFromAssets(
-    'assets/tgt_ful_license_free.txt',
-  );
+  // final englishLines = await loadTextFileFromAssets(
+  //   'assets/src_fra.txt',
+  // );
+  final frenchLines = await loadTextFileFromAssets('assets/src_fra.txt');
+  final fulaLines = await loadTextFileFromAssets('assets/tgt_ful.txt');
 
   // Verify all files have the same number of lines
-  if (englishLines.length != frenchLines.length ||
-      frenchLines.length != fulaLines.length) {
+  if (frenchLines.length != fulaLines.length) {
     throw Exception(
       'Files have different line counts: '
-      'English: ${englishLines.length}, '
+      //'English: ${englishLines.length}, '
       'French: ${frenchLines.length}, '
       'Fula: ${fulaLines.length}',
     );
   }
 
-  print('✅ Loaded ${englishLines.length} translation pairs');
+  print('✅ Loaded ${frenchLines.length} translation pairs');
 
   // Step 3: Set up SQLite store
   final appDir = await getApplicationDocumentsDirectory();
@@ -63,38 +58,38 @@ Future<void> loadEnglishFrenchFulaDataset() async {
 
   // Step 4: Create translation pairs for BOTH English→Fula and French→Fula
   // We store embeddings for Fula (target language) so we can search from either source
-  // 
+  //
   // Schema: TranslationPair uses generic names:
   // - source = source text (can be English or French)
   // - target = target text (Fula)
-  final englishTranslations = <TranslationPair>[];
+  final englishTranslations = <TranslationPair>[]; // not used
   final frenchTranslations = <TranslationPair>[];
 
-  print('Creating English→Fula pairs...');
-  for (var i = 0; i < englishLines.length; i++) {
-    final english = englishLines[i].trim();
-    final fula = fulaLines[i].trim();
+  // print('Creating English→Fula pairs...');
+  // for (var i = 0; i < englishLines.length; i++) {
+  //   final english = englishLines[i].trim();
+  //   final fula = fulaLines[i].trim();
 
-    if (english.isEmpty || fula.isEmpty) continue;
+  //   if (english.isEmpty || fula.isEmpty) continue;
 
-    // Generate embedding for Fula (target language)
-    final embeddingVector = await embeddingService.generateEmbedding(fula);
+  //   // Generate embedding for Fula (target language)
+  //   final embeddingVector = await embeddingService.generateEmbedding(fula);
 
-    englishTranslations.add(
-      TranslationPair(
-        source: english, // Source: English
-        target: fula, // Target: Fula
-        embedding: embeddingVector.toList(),
-      ),
-    );
+  //   englishTranslations.add(
+  //     TranslationPair(
+  //       source: english, // Source: English
+  //       target: fula, // Target: Fula
+  //       embedding: embeddingVector.toList(),
+  //     ),
+  //   );
 
-    // Progress indicator
-    if ((i + 1) % 500 == 0) {
-      print(
-        '  Processed ${i + 1}/${englishLines.length} English→Fula pairs...',
-      );
-    }
-  }
+  //   // Progress indicator
+  //   if ((i + 1) % 500 == 0) {
+  //     print(
+  //       '  Processed ${i + 1}/${englishLines.length} English→Fula pairs...',
+  //     );
+  //   }
+  // }
 
   print('Creating French→Fula pairs...');
   for (var i = 0; i < frenchLines.length; i++) {
@@ -103,8 +98,9 @@ Future<void> loadEnglishFrenchFulaDataset() async {
 
     if (french.isEmpty || fula.isEmpty) continue;
 
-    // Generate embedding for Fula (target language)
-    final embeddingVector = await embeddingService.generateEmbedding(fula);
+    // Generate embedding for French (source language)
+    // We search from French, so we need to compare French embeddings with French embeddings
+    final embeddingVector = await embeddingService.generateEmbedding(french);
 
     frenchTranslations.add(
       TranslationPair(
@@ -120,16 +116,12 @@ Future<void> loadEnglishFrenchFulaDataset() async {
     }
   }
 
-  print('✅ Created ${englishTranslations.length + frenchTranslations.length} translation pairs');
-  print('   - ${englishTranslations.length} English→Fula');
-  print('   - ${frenchTranslations.length} French→Fula');
-
   // Step 5: Create searcher and save to database
   // Combine all translations into one searcher
   print('Building searcher and saving to database...');
-  
+
   final allTranslations = [...englishTranslations, ...frenchTranslations];
-  
+
   // Create searcher (ml_algo uses generic source/target names)
   await HybridFTSSearcher.createFromTranslations(
     store,
@@ -142,7 +134,7 @@ Future<void> loadEnglishFrenchFulaDataset() async {
   // Clean up
   embeddingService.dispose();
   store.close();
-
+  print('✅ Created ${allTranslations.length} translation pairs');
   print('✅ Database saved to: $dbPath');
-  print('✅ Ready to translate: English→Fula, French→Fula');
+  print('✅ Ready to translate: French→Fula');
 }

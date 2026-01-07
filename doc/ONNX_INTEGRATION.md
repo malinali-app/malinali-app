@@ -63,7 +63,7 @@ class TranslationService {
     await _isolateManager!.start(OnnxIsolateType.miniLm);
     
     // Model path (copy ONNX model to assets)
-    _modelPath = 'assets/paraphrase-multilingual-MiniLM-L12-v2.onnx';
+    _modelPath = 'assets/all-MiniLM-L6-v2.onnx';
   }
 
   Future<Vector> generateEmbedding(String text) async {

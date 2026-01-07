@@ -39,9 +39,9 @@ Future<void> loadFrenchFulaDataset() async {
     final french = pair[0];
     final fula = pair[1];
     
-    // Generate embedding for Fula text (target language)
-    // You can also use French if you want to search from Fula to French
-    final embeddingVector = await embeddingService.generateEmbedding(fula);
+    // Generate embedding for French (source language)
+    // We search from French, so we need to compare French embeddings with French embeddings
+    final embeddingVector = await embeddingService.generateEmbedding(french);
     
     translations.add(TranslationPair(
       french: french,
@@ -104,7 +104,8 @@ Future<void> loadFrenchFulaFromCsv(String csvPath) async {
     final french = row[0];
     final fula = row[1];
     
-    final embedding = await embeddingService.generateEmbedding(fula);
+    // Generate embedding for French (source language)
+    final embedding = await embeddingService.generateEmbedding(french);
     translations.add(TranslationPair(
       french: french,
       english: fula,
@@ -147,7 +148,8 @@ Future<void> loadFrenchFulaFromJson(String jsonPath) async {
     final french = item['french'] as String;
     final fula = item['fula'] as String;
     
-    final embedding = await embeddingService.generateEmbedding(fula);
+    // Generate embedding for French (source language)
+    final embedding = await embeddingService.generateEmbedding(french);
     translations.add(TranslationPair(
       french: french,
       english: fula,
@@ -220,14 +222,14 @@ Future<void> searchTranslations() async {
 ```
 
 **Note**: Both English and French queries will return Fula translations because:
-- We stored embeddings for Fula (target language)
-- The multilingual model can match English/French embeddings to Fula embeddings
+- We stored embeddings for the source language (English/French)
+- The model can match source language embeddings to find similar phrases
 - FTS search finds matches in both source languages
 
 ## Key Points
 
 1. **Initialize EmbeddingService once** - Reuse it for all embeddings
-2. **Generate embeddings for target language** - Usually the language you're translating TO
+2. **Generate embeddings for source language** - The language you're translating FROM (e.g., French for French→Fula)
 3. **Use `createFromTranslations()`** - Simplest way to create searcher
 4. **Call `saveToStore()`** - Persists to database for later use
 5. **Progress indicators** - Show progress for large datasets

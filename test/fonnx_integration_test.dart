@@ -9,7 +9,7 @@ void main() {
   group('FONNX Integration Test', () {
     test('model file should exist and be valid size', () {
       final modelPath =
-          'test/models/paraphrase-multilingual-MiniLM-L12-v2.onnx';
+          'test/models/all-MiniLM-L6-v2.onnx';
       final modelFile = File(modelPath);
 
       expect(
@@ -32,7 +32,7 @@ void main() {
       );
     });
 
-    test('should load paraphrase-multilingual-MiniLM-L12-v2 ONNX model', () {
+    test('should load all-MiniLM-L6-v2 ONNX model', () {
       // Skip if not on a supported platform for FFI
       if (Platform.isAndroid || Platform.isIOS) {
         // These platforms use platform channels, not FFI
@@ -41,7 +41,7 @@ void main() {
       }
 
       final modelPath =
-          'test/models/paraphrase-multilingual-MiniLM-L12-v2.onnx';
+          'test/models/all-MiniLM-L6-v2.onnx';
       final modelFile = File(modelPath);
 
       // Verify model file exists

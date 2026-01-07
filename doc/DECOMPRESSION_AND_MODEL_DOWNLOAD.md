@@ -135,7 +135,7 @@ For `.db.gz` files, Dart's built-in `gzip.decode()` is perfect. No package neede
 #### Technical Considerations
 
 **Hugging Face Download:**
-- Direct download URL: `https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/model.onnx`
+- Direct download URL: `https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/model.onnx`
 - Need to handle:
   - Large file downloads (449MB)
   - Progress tracking

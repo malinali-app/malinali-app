@@ -110,7 +110,7 @@ void main() {
       }
 
       final modelPath =
-          'test/models/paraphrase-multilingual-MiniLM-L12-v2.onnx';
+          'test/models/all-MiniLM-L6-v2.onnx';
       final modelFile = File(modelPath);
 
       if (!modelFile.existsSync()) {

@@ -78,3 +78,15 @@ HybridFTSSearcher
 
 - Database stored in app documents directory
 - Fula Translation pairs are created on first launch
+
+## Future Improvements
+
+### French-Specific Embedding Models
+
+For even better French embedding quality, consider exploring French-specific models that work with `fonnx`:
+
+- **French-optimized models**: Models like `sentence-camembert-base` or `dangvantuan/french-document-embedding` are specifically trained for French and may provide superior semantic similarity for French text
+- **ONNX compatibility**: These models would need to be exported to ONNX format and may require adjustments to `EmbeddingService` (input/output tensor names, embedding dimensions)
+- **Integration**: The `fonnx` package currently supports MiniLM architecture models; French-specific models may require additional adaptation or using lower-level ONNX APIs
+
+Current model: `all-MiniLM-L6-v2` (monolingual, better for French-only comparisons than the previous multilingual model)

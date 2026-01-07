@@ -27,14 +27,14 @@ from transformers import AutoModel
 import torch
 
 # Load the model
-model = AutoModel.from_pretrained('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+model = AutoModel.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
 
 # Export to ONNX with explicit output name
 dummy_input = torch.randint(0, 1000, (1, 128))  # Example input shape
 torch.onnx.export(
     model,
     dummy_input,
-    "paraphrase-multilingual-MiniLM-L12-v2.onnx",
+    "all-MiniLM-L6-v2.onnx",
     input_names=['input_ids', 'token_type_ids', 'attention_mask'],
     output_names=['embeddings'],  # <-- This is the key!
     dynamic_axes={

@@ -3,11 +3,11 @@
 ## Current App Size
 
 ### Assets Breakdown
-- **ONNX Model**: ~449MB (`paraphrase-multilingual-MiniLM-L12-v2.onnx`)
+- **ONNX Model**: ~90MB (`all-MiniLM-L6-v2.onnx`)
 - **Tokenizer**: ~8.7MB (`tokenizer.json`)
 - **Text Files**: ~few MB (3 translation files)
 - **App Code**: ~few MB (minimal Flutter app)
-- **Total Assets**: ~460MB+
+- **Total Assets**: ~110MB+
 
 ### Google Play Store Limits
 
@@ -23,18 +23,18 @@
 
 ## The Problem ⚠️
 
-**Your app is ~463MB, but Google Play limit is 200MB for base bundle!**
+**Your app is ~110MB, which is within Google Play limit of 200MB for base bundle!**
 
 Current breakdown:
-- ONNX Model: 449MB
+- ONNX Model: ~90MB
 - Tokenizer: 8.7MB
 - Text files: ~5MB
 - App code: ~few MB
-- **Total: ~463MB**
+- **Total: ~110MB**
 
 This means:
-- ❌ Cannot publish as-is (exceeds 200MB limit by 2.3x!)
-- ⚠️ **MUST use Asset Delivery or download on launch**
+- ✅ Can publish as-is (within 200MB limit!)
+- ℹ️ Asset Delivery optional but recommended for future model updates
 
 ## Solutions
 

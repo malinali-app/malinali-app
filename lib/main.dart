@@ -25,6 +25,7 @@ class MalinaliApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
+      debugShowCheckedModeBanner: false,
       home: const TranslationScreen(),
     );
   }
@@ -47,6 +48,33 @@ class _TranslationScreenState extends State<TranslationScreen> {
   String _sourceLang = 'French';
   String _targetLang = 'Fula'; // Default: French → Fula
   String? _error;
+  TranslationDirection _direction = TranslationDirection.frenchToFula;
+
+  // Helper to get display name for UI (keeps logic consistent with 'French'/'Fula')
+  String _getDisplayName(String lang) {
+    switch (lang) {
+      case 'French':
+        return 'Français';
+      case 'Fula':
+        return 'Pulaar';
+      default:
+        return lang;
+    }
+  }
+
+  void _toggleDirection() {
+    setState(() {
+      if (_direction == TranslationDirection.frenchToFula) {
+        _direction = TranslationDirection.fulaToFrench;
+        _sourceLang = 'Fula';
+        _targetLang = 'French';
+      } else {
+        _direction = TranslationDirection.frenchToFula;
+        _sourceLang = 'French';
+        _targetLang = 'Fula';
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -76,7 +104,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
         print(
           'Creating Fula translation database (this will take a while for 30k+ pairs)...',
         );
-        await loadEnglishFrenchFulaDataset();
+        await loadFrenchFulaDataset();
         searcher = await HybridFTSSearcher.loadFromStore(store, 'fula');
         print('✅ Fula translation database created and loaded');
       }
@@ -108,18 +136,24 @@ class _TranslationScreenState extends State<TranslationScreen> {
     });
 
     try {
-      // Generate embedding using ONNX model
-      Vector queryEmbedding;
-      if (_embeddingService != null) {
-        // Use real ONNX model embedding
-        queryEmbedding = await _embeddingService!.generateEmbedding(inputText);
-      } else {
-        // Fallback: simple hash-based embedding (shouldn't happen if initialized)
-        final embedding = List<double>.generate(384, (i) {
-          final hash = (inputText.hashCode + i * 1000).abs();
-          return (hash % 1000) / 1000.0;
-        });
-        queryEmbedding = Vector.fromList(embedding);
+      // Generate embedding using ONNX model (only needed for semantic search)
+      // Skip for Fula → French/English since we only use keyword search
+      Vector? queryEmbedding;
+      if (_sourceLang != 'Fula') {
+        // Only generate embedding if we're doing semantic search
+        if (_embeddingService != null) {
+          // Use real ONNX model embedding
+          queryEmbedding = await _embeddingService!.generateEmbedding(
+            inputText,
+          );
+        } else {
+          // Fallback: simple hash-based embedding (shouldn't happen if initialized)
+          final embedding = List<double>.generate(384, (i) {
+            final hash = (inputText.hashCode + i * 1000).abs();
+            return (hash % 1000) / 1000.0;
+          });
+          queryEmbedding = Vector.fromList(embedding);
+        }
       }
 
       // Handle different translation directions
@@ -128,38 +162,30 @@ class _TranslationScreenState extends State<TranslationScreen> {
       List<TranslationResult> ftsResults = [];
       List<TranslationResult> semanticResultsFinal = [];
       bool hasExactFtsMatch = false;
-      String resultSource = '';
       // Track FTS indices to check if results have FTS backing (for distance threshold check)
       Set<int> ftsIndices = <int>{};
 
       if (_sourceLang == 'Fula') {
         // Fula → English/French: Search in targetText (Fula), return sourceText (English/French)
-        // Use semantic search since embeddings are stored for Fula
+        // Skip semantic search since embeddings are stored for French (source), not Fula (target)
+        // Use keyword search only - FTS searches both sourceText and targetText
         print(
-          'DEBUG: Fula → ${_targetLang}: Using semantic search (Fula embeddings)',
+          'DEBUG: Fula → ${_targetLang}: Using keyword search only (no semantic search - embeddings are for French, not Fula)',
         );
-        results = await _searcher!.searchBySemantic(
-          queryEmbedding,
-          k: 10, // Get more results to filter by target language
-          searchRadius: 10,
+
+        // Use keyword search - FTS will match Fula text in targetText column
+        final keywordResults = await _searcher!.searchByKeyword(
+          inputText,
+          k: 20,
         );
-        resultSource = 'Semantic (embedding)';
-        print('DEBUG: Semantic search results (before filtering):');
-        for (var i = 0; i < results.length; i++) {
-          final r = results[i];
-          print(
-            '  ${i + 1}. "${r.targetText}" → "${r.sourceText}" (distance: ${r.distance.toStringAsFixed(4)})',
-          );
-        }
+        print('DEBUG: Keyword search found ${keywordResults.length} results');
 
         // Filter results to match target language (English or French)
-        // Note: This is a simple heuristic - in production you might want more sophisticated filtering
+        // Results have: sourceText = French/English, targetText = Fula (what user searched for)
         if (_targetLang == 'English') {
           // Filter to show only English results (heuristic: no French characters)
-          results = results.where((r) {
+          results = keywordResults.where((r) {
             final text = r.sourceText.toLowerCase();
-            // Simple heuristic: English text typically doesn't have French-specific characters
-            // This is not perfect but works for most cases
             return !text.contains('é') &&
                 !text.contains('è') &&
                 !text.contains('ê') &&
@@ -169,9 +195,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
           }).toList();
         } else if (_targetLang == 'French') {
           // Filter to show only French results (heuristic: has French characters or common French words)
-          results = results.where((r) {
+          results = keywordResults.where((r) {
             final text = r.sourceText.toLowerCase();
-            // Simple heuristic: French text often has French-specific characters
             return text.contains('é') ||
                 text.contains('è') ||
                 text.contains('ê') ||
@@ -182,19 +207,33 @@ class _TranslationScreenState extends State<TranslationScreen> {
                 text.contains(' la ') ||
                 text.contains(' de ');
           }).toList();
+        } else {
+          // No filtering needed if target is Fula (shouldn't happen in this branch)
+          results = keywordResults;
         }
+
+        // Look for exact match
+        TranslationResult? exactMatch;
+        final normalizedInput = inputText.trim().toLowerCase();
+        for (final r in results) {
+          final normalizedTarget = r.targetText.trim().toLowerCase();
+          if (normalizedTarget == normalizedInput) {
+            exactMatch = r;
+            break;
+          }
+        }
+
         results = results.take(3).toList(); // Limit to 3 results
         print('DEBUG: After language filtering: ${results.length} results');
         for (var i = 0; i < results.length; i++) {
           final r = results[i];
-          print(
-            '  ${i + 1}. "${r.targetText}" → "${r.sourceText}" (distance: ${r.distance.toStringAsFixed(4)})',
-          );
+          print('  ${i + 1}. "${r.targetText}" → "${r.sourceText}"');
         }
-        // For Fula → English/French, we only have semantic search
-        ftsResults = [];
-        semanticResultsFinal = results;
-        hasExactFtsMatch = false;
+
+        // For Fula → English/French, we only use keyword search (no semantic search)
+        ftsResults = results;
+        semanticResultsFinal = [];
+        hasExactFtsMatch = exactMatch != null;
       } else {
         // English/French → Fula: Search in sourceText (English/French), return targetText (Fula)
         // Stem query for FTS to handle word variations
@@ -280,8 +319,9 @@ class _TranslationScreenState extends State<TranslationScreen> {
         }
 
         // 2) Semantic search (always run, regardless of FTS outcome)
+        // queryEmbedding should not be null here since we're not in Fula → French/English branch
         final semanticResults = await _searcher!.searchBySemantic(
-          queryEmbedding,
+          queryEmbedding!,
           k: 50,
           searchRadius: 10,
         );
@@ -423,7 +463,6 @@ class _TranslationScreenState extends State<TranslationScreen> {
         // Store results for display (we'll use both FTS and semantic separately)
         results =
             ftsResults; // Keep for backward compatibility, but we'll build split view
-        resultSource = 'Split View (FTS + Semantic)';
 
         print(
           'DEBUG: FTS results: ${ftsResults.length}, Semantic results: ${semanticResultsFinal.length}',
@@ -443,7 +482,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
       // For display, we want to show: source phrase → target translation
       // This allows users to assess if the translation is likely correct
       String getSourceText(TranslationResult result) {
-        if (_sourceLang == 'Fula') {
+        if (_direction == TranslationDirection.fulaToFrench) {
           // When translating FROM Fula, the source phrase is in targetText (Fula)
           return result.targetText;
         } else {
@@ -453,7 +492,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
       }
 
       String getTargetText(TranslationResult result) {
-        if (_targetLang == 'Fula') {
+        if (_direction == TranslationDirection.frenchToFula) {
           // When translating TO Fula, the target is in targetText
           return result.targetText;
         } else {
@@ -469,6 +508,13 @@ class _TranslationScreenState extends State<TranslationScreen> {
       String formatResult(TranslationResult result, int index, bool isExact) {
         final source = getSourceText(result);
         final target = getTargetText(result);
+        // Debug: log what we're displaying
+        print(
+          'DEBUG formatResult: sourceLang=$_sourceLang, targetLang=$_targetLang, '
+          'result.sourceText="${result.sourceText.substring(0, result.sourceText.length > 50 ? 50 : result.sourceText.length)}...", '
+          'result.targetText="${result.targetText.substring(0, result.targetText.length > 50 ? 50 : result.targetText.length)}...", '
+          'display source="$source", display target="$target"',
+        );
         final prefix = isExact ? '⭐ ' : '${index + 1}. ';
         return '$prefix$source → $target';
       }
@@ -484,11 +530,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
         }
       }
 
-      buffer.writeln('');
-      buffer.writeln('─────────────────────────────────────');
-      buffer.writeln('');
-
       // Build Semantic column (right)
+      buffer.writeln('');
       buffer.writeln('✨ Semantic');
       if (semanticResultsFinal.isEmpty) {
         buffer.writeln('No match');
@@ -499,53 +542,13 @@ class _TranslationScreenState extends State<TranslationScreen> {
       }
 
       _outputController.text = buffer.toString().trim();
+      buffer.writeln('');
+      buffer.writeln('');
     } catch (e) {
       _outputController.text = 'Error: $e';
     } finally {
       setState(() {
         _isTranslating = false;
-      });
-    }
-  }
-
-  void _onSourceLanguageChanged(String? newLang) {
-    if (newLang == null || newLang == _sourceLang) return;
-
-    // Prevent selecting the same language for both source and target
-    if (newLang == _targetLang) {
-      // Swap them instead
-      setState(() {
-        _targetLang = _sourceLang;
-        _sourceLang = newLang;
-        // Swap input and output
-        final tempText = _inputController.text;
-        _inputController.text = _outputController.text;
-        _outputController.text = tempText;
-      });
-    } else {
-      setState(() {
-        _sourceLang = newLang;
-      });
-    }
-  }
-
-  void _onTargetLanguageChanged(String? newLang) {
-    if (newLang == null || newLang == _targetLang) return;
-
-    // Prevent selecting the same language for both source and target
-    if (newLang == _sourceLang) {
-      // Swap them instead
-      setState(() {
-        _sourceLang = _targetLang;
-        _targetLang = newLang;
-        // Swap input and output
-        final tempText = _inputController.text;
-        _inputController.text = _outputController.text;
-        _outputController.text = tempText;
-      });
-    } else {
-      setState(() {
-        _targetLang = newLang;
       });
     }
   }
@@ -560,142 +563,165 @@ class _TranslationScreenState extends State<TranslationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Malinali'),
-        actions: [
+    Widget bodyContent;
+    if (_isLoading) {
+      bodyContent = const Center(child: CircularProgressIndicator());
+    } else if (_error != null) {
+      bodyContent = Center(child: Text('Error: $_error'));
+    } else {
+      bodyContent = Column(
+        children: [
+          // Language direction switcher at the top
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+            child: _LanguageDirectionSwitcher(
+              direction: _direction,
+              onToggle: _toggleDirection,
+            ),
+          ),
+          // Input editor (20% of space)
+          Expanded(
+            flex: 2,
+            child: Container(
+              margin: const EdgeInsets.all(8.0),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Text(
+                      _getDisplayName(_sourceLang),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: CodeEditor(
+                      controller: _inputController,
+                      style: const CodeEditorStyle(
+                        fontSize: 16,
+                        fontFamily: 'monospace',
+                      ),
+                      autocompleteSymbols: false,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 4.0),
+          // Translate button
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Source language dropdown
-                DropdownButton<String>(
-                  value: _sourceLang,
-                  underline: Container(), // Remove default underline
-                  items: const [
-                    DropdownMenuItem(value: 'French', child: Text('French')),
-                    DropdownMenuItem(value: 'English', child: Text('English')),
-                    DropdownMenuItem(value: 'Fula', child: Text('Fula')),
-                  ],
-                  onChanged: _onSourceLanguageChanged,
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isTranslating ? null : _translate,
+                icon: _isTranslating
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.play_arrow),
+                label: const Text('Translate'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16.0),
+                  elevation: 2,
                 ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8.0),
-                  child: Icon(Icons.arrow_forward, size: 20),
-                ),
-                // Target language dropdown
-                DropdownButton<String>(
-                  value: _targetLang,
-                  underline: Container(), // Remove default underline
-                  items: const [
-                    DropdownMenuItem(value: 'French', child: Text('French')),
-                    DropdownMenuItem(value: 'English', child: Text('English')),
-                    DropdownMenuItem(value: 'Fula', child: Text('Fula')),
-                  ],
-                  onChanged: _onTargetLanguageChanged,
-                ),
-              ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 4.0),
+          // Output editor (read-only, 80% of space)
+          Expanded(
+            flex: 6,
+            child: Container(
+              margin: const EdgeInsets.all(8.0),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Text(
+                      _getDisplayName(_targetLang),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: CodeEditor(
+                      controller: _outputController,
+                      readOnly: true,
+                      style: const CodeEditorStyle(
+                        fontSize: 16,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
+      );
+    }
+
+    return Scaffold(body: SafeArea(child: bodyContent));
+  }
+}
+
+enum TranslationDirection { frenchToFula, fulaToFrench }
+
+class _LanguageDirectionSwitcher extends StatelessWidget {
+  const _LanguageDirectionSwitcher({
+    required this.direction,
+    required this.onToggle,
+  });
+
+  final TranslationDirection direction;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final isFrenchToFula = direction == TranslationDirection.frenchToFula;
+    final label = isFrenchToFula
+        ? 'Français → Pulaar'
+        : 'Pulaar → Français'; // french => fula
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onToggle,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade700,
+            ),
+          ),
+        ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Center(child: Text('Error: $_error'))
-          : Column(
-              children: [
-                // Input editor (20% of space)
-                Expanded(
-                  flex: 2,
-                  child: Container(
-                    margin: const EdgeInsets.all(8.0),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: Text(
-                            _sourceLang,
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: CodeEditor(
-                            controller: _inputController,
-                            style: CodeEditorStyle(
-                              fontSize: 16,
-                              fontFamily: 'monospace',
-                            ),
-                            autocompleteSymbols: false,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                // Output editor (read-only, 80% of space)
-                Expanded(
-                  flex: 8,
-                  child: Container(
-                    margin: const EdgeInsets.all(8.0),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: Text(
-                            _targetLang,
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: CodeEditor(
-                            controller: _outputController,
-                            readOnly: true,
-                            style: CodeEditorStyle(
-                              fontSize: 16,
-                              fontFamily: 'monospace',
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-      floatingActionButton: _isLoading
-          ? null
-          : FloatingActionButton(
-              onPressed: _isTranslating ? null : _translate,
-              tooltip: 'Translate',
-              child: _isTranslating
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : const Icon(Icons.translate),
-            ),
     );
   }
 }

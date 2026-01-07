@@ -68,3 +68,4 @@ check_git_size.sh
 cleanup_git_history.sh
 pubspec.lock
 macos/onnx_runtime
+assets/tgt_ful.txt

@@ -72,11 +72,13 @@ flutter:
 
   # Assets
   assets:
-    - assets/models/paraphrase-multilingual-MiniLM-L12-v2.onnx
+    - assets/models/all-MiniLM-L6-v2.onnx
     - assets/models/tokenizer.json
-    - assets/src_eng_license_free.txt
-    - assets/src_fra_license_free.txt
-    - assets/tgt_ful_license_free.txt
+    - assets/src_fra.txt
+    - assets/tgt_ful.txt
+    #- assets/src_eng_license_free.txt
+    #- assets/src_fra_license_free.txt
+    #- assets/tgt_ful_license_free.txt
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

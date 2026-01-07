@@ -3,7 +3,7 @@
 ## What Was Done
 
 ### 1. Added ONNX Model Files
-- ✅ Copied `paraphrase-multilingual-MiniLM-L12-v2.onnx` (449MB) to `assets/models/`
+- ✅ Copied `all-MiniLM-L6-v2.onnx` (~90MB) to `assets/models/`
 - ✅ Copied `tokenizer.json` (8.7MB) to `assets/models/`
 - ✅ Added assets to `pubspec.yaml`
 

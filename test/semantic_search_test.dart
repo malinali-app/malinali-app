@@ -336,7 +336,8 @@ Future<void> _createDataset(
 
     if (english.isEmpty || fula.isEmpty) continue;
 
-    final embeddingVector = await embeddingService.generateEmbedding(fula);
+    // Generate embedding for English (source language) for English→Fula translation
+    final embeddingVector = await embeddingService.generateEmbedding(english);
 
     allTranslations.add(
       TranslationPair(
@@ -360,7 +361,8 @@ Future<void> _createDataset(
 
     if (french.isEmpty || fula.isEmpty) continue;
 
-    final embeddingVector = await embeddingService.generateEmbedding(fula);
+    // Generate embedding for French (source language) for French→Fula translation
+    final embeddingVector = await embeddingService.generateEmbedding(french);
 
     allTranslations.add(
       TranslationPair(

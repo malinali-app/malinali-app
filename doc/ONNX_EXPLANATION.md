@@ -73,7 +73,7 @@ The ONNX model was trained on billions of sentence pairs, so it understands that
 
 See `ONNX_INTEGRATION.md` for step-by-step instructions. The key steps are:
 
-1. **Add model to assets**: Copy `paraphrase-multilingual-MiniLM-L12-v2.onnx` to `assets/`
+1. **Add model to assets**: Copy `all-MiniLM-L6-v2.onnx` to `assets/`
 2. **Add tokenizer**: Copy `tokenizer.json` to `assets/`
 3. **Initialize ONNX**: Use `OnnxIsolateManager` from FONNX
 4. **Generate embeddings**: Replace `_generateSimpleEmbedding()` with ONNX inference

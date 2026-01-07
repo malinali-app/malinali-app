@@ -40,26 +40,24 @@ class EmbeddingService {
     try {
       // Copy model from assets to app directory (ONNX needs file path)
       final appDir = await getApplicationDocumentsDirectory();
-      final modelFile = File(
-        '${appDir.path}/paraphrase-multilingual-MiniLM-L12-v2.onnx',
-      );
+      final modelFile = File('${appDir.path}/all-MiniLM-L6-v2.onnx');
       final tokenizerFile = File('${appDir.path}/tokenizer.json');
 
       // Copy model if not exists
       if (!await modelFile.exists()) {
         final modelData = await rootBundle.load(
-          'assets/models/paraphrase-multilingual-MiniLM-L12-v2.onnx',
+          'assets/models/all-MiniLM-L6-v2.onnx',
         );
         await modelFile.writeAsBytes(modelData.buffer.asUint8List());
       }
 
-      // Copy tokenizer if not exists
-      if (!await tokenizerFile.exists()) {
-        final tokenizerData = await rootBundle.load(
-          'assets/models/tokenizer.json',
-        );
-        await tokenizerFile.writeAsBytes(tokenizerData.buffer.asUint8List());
-      }
+      // Always copy tokenizer from assets to ensure we have the correct version
+      // This ensures tokenizer matches the model (important when switching models)
+      final tokenizerData = await rootBundle.load(
+        'assets/models/tokenizer.json',
+      );
+      await tokenizerFile.writeAsBytes(tokenizerData.buffer.asUint8List());
+      print('✅ Copied tokenizer.json from assets to app directory');
 
       _modelPath = modelFile.path;
       _tokenizerPath = tokenizerFile.path;
