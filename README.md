@@ -1,16 +1,31 @@
 # Malinali - Local Translation App
 
-An offline-first Flutter app for local translation using hybrid FTS + semantic search.
+An offline-first Flutter app for local translation using retrieval-based translation combining Full Text Search (FTS) and Semantic Search.
 
 ![offline_translator_diagram.png](offline_translator_diagram.png)
 
-If distance < 0.1, show "Translation not found" (poor clustering).
-
 ## Approach: Frugal, Open Source, Pragmatic
 
-Malinali takes a **retrieval-based translation** approach rather than generative neural translation. This makes it fundamentally different from solutions like OpenNMT, CTranslate2, or INMT-lite:
+Malinali takes a **retrieval-based translation** approach rather than generative neural translation. This makes it fundamentally different from offline solutions like OpenNMT, CTranslate2, or INMT-lite.
 
-This approach is **imperfect but pragmatic**:
+The main reason is that low-resource languages like fula lack the resources needed for advanced machine translation techniques.
+
+While advanced translation models (e.g. nllb) give good, they are too heavy to run locally. 
+
+So we use a innovative low-tech solution.
+
+1. Full Text Search based on SQLite
+2. Semantic Search using embeddings/vector, based on
+    - a tiny embedder [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) 
+    - a forked version of [ml_algo](https://pub.dev/packages/ml_algo) that stores embeddings in SQLite
+
+Combining the two and displaying the source text, provides user with as much translation information as possible.
+
+
+![screenshot_mum](screenshot_mum)
+
+This approach is **imperfect but pragmatic**; 
+
 - ✅ **Works offline**: All data stored locally, no API calls
 - ✅ **Mobile-friendly**: Flutter app, runs smoothly on low-end devices
 - ✅ **Fast**: Sub-20ms queries using SQLite FTS + approximate nearest neighbor search
@@ -22,64 +37,32 @@ This approach is **imperfect but pragmatic**:
 **When to use Malinali:**
 - Domain-specific translations (e.g., medical, legal, technical)
 - Low-resource languages with limited training data
+- Imperfect translation tolerated
 - Offline-first requirements
 - Privacy-sensitive applications
 - Resource-constrained environments
 
-**When to use neural translation:**
-- General-purpose translation with high coverage
-- Context-aware, fluent generation
-- Handling unseen phrases and creative language
-
 ## Features
 
-- **Text Editor**: Multi-line text input using `re_editor`
-- **Hybrid Search**: Combines keyword (FTS) and semantic (RBPS) search
-- **Language Swap**: Easy language permutation via AppBar button
+- **Hybrid Search**: Combines keyword-based (FTS) and semantic (vector similarity) search
 - **Offline**: All translations stored locally in SQLite
-- **Fast**: Sub-20ms translation queries
 
-## Getting Started
+## Dataset
 
-### Prerequisites
-
-- Flutter SDK
-- The `ml_algo` package (path dependency to parent directory)
-
-### Running the App
-
-```bash
-cd malinali
-flutter pub get
-flutter run
-```
+License-free french/english -> fula dataset from [awesome_fula_nl_resources](https://github.com/flutter-painter/awesome_fula_nl_resources)
 
 ## Current Implementation
 
-- **Languages**: French ↔ English
-- **Translation Method**: Keyword search (FTS)
-- **Sample Data**: 15 common phrases pre-loaded
-
-## Architecture
-
-```
-TranslationScreen
-├── Input Editor (re_editor)
-├── Output Editor (read-only)
-├── FloatingActionButton (translate)
-└── AppBar (language swap)
-
-HybridFTSSearcher
-├── FTS (keyword search)
-└── RBPS (semantic search)
-```
-
-## Notes
-
-- Database stored in app documents directory
-- Fula Translation pairs are created on first launch
+- Fula Translation pairs are created on first launch, embedding french (source) elements takes __up to 30 minutes__
 
 ## Future Improvements
+### Better pickers
+
+- Allow users to select .db to avoid first init delay
+
+- Allow users to pick source/target translation texts to insert additional data or reset the app with their own custom data
+
+- Allow users to add additional language support
 
 ### French-Specific Embedding Models
 
@@ -90,3 +73,7 @@ For even better French embedding quality, consider exploring French-specific mod
 - **Integration**: The `fonnx` package currently supports MiniLM architecture models; French-specific models may require additional adaptation or using lower-level ONNX APIs
 
 Current model: `all-MiniLM-L6-v2` (monolingual, better for French-only comparisons than the previous multilingual model)
+
+## BUILDME
+flutter build macos
+hdiutil create -volname "Malinali" -srcfolder "build/macos/Build/Products/Release/malinali.app" -ov -format UDZO "malinali.dmg"
