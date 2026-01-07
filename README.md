@@ -2,18 +2,15 @@
 
 An offline-first Flutter app for local translation using retrieval-based translation combining Full Text Search (FTS) and Semantic Search.
 
-![screenshot_mum.png](screenshot_mum.png)
-
-
 ## Approach: Frugal, Open Source, Pragmatic
 
 Malinali takes a **retrieval-based translation** approach rather than generative neural translation. This makes it fundamentally different from offline solutions like OpenNMT, CTranslate2, or INMT-lite.
 
-The main reason is that low-resource languages like fula lack the resources needed for advanced machine translation techniques.
+Since low-resource languages like fula lack the resources needed for these machine translation tools they yield  poor results.
 
-While advanced translation models (e.g. nllb) give good, they are too heavy to run locally. 
+While advanced translation models (e.g. [nllb](https://huggingface.co/flutter-painter/nllb-fra-fuf-v2)) give good results, they are too heavy to run locally and incompatible with mobile OS.
 
-So we use a innovative low-tech solution.
+So we come with this innovative low-tech solution:
 
 1. Full Text Search based on SQLite
 2. Semantic Search using embeddings/vector, based on
@@ -22,6 +19,7 @@ So we use a innovative low-tech solution.
 
 Combining the two and displaying the source text, provides user with as much translation information as possible.
 
+![screenshot_mum.png](screenshot_mum.png)
 
 
 This approach is **imperfect but pragmatic**; 
