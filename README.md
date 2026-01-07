@@ -10,12 +10,12 @@ Since low-resource languages like fula lack the resources needed for these machi
 
 While advanced translation models (e.g. [nllb](https://huggingface.co/flutter-painter/nllb-fra-fuf-v2)) give good results, they are too heavy to run locally and incompatible with mobile OS.
 
-So we come with this innovative low-tech solution:
+So we came up with this innovative low-tech solution:
 
 1. Full Text Search based on SQLite
 2. Semantic Search using embeddings/vector, based on
-    - a tiny embedder [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) 
-    - a forked version of [ml_algo](https://pub.dev/packages/ml_algo) that stores embeddings in SQLite
+    - a tiny embedder [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) that runs using [fonnx](https://github.com/Telosnex/fonnx)
+    - a [forked version](https://github.com/malinali-app/ml_algo) of [ml_algo](https://pub.dev/packages/ml_algo) that stores embeddings in SQLite
 
 Combining the two and displaying the source text, provides user with as much translation information as possible.
 
@@ -24,26 +24,16 @@ Combining the two and displaying the source text, provides user with as much tra
 
 This approach is **imperfect but pragmatic**; 
 
-- ✅ **Works offline**: All data stored locally, no API calls
-- ✅ **Mobile-friendly**: Flutter app, runs smoothly on low-end devices
-- ✅ **Fast**: Sub-20ms queries using SQLite FTS + approximate nearest neighbor search
-- ✅ **Open source**: Full transparency, easy to extend and customize
-- ⚠️ **Limited to training data**: Can only translate phrases seen in the corpus
-- ⚠️ **No context awareness**: Each phrase translated independently
-- ⚠️ **Requires quality corpus**: Translation quality depends on dataset quality
+- **Works offline**: All data stored locally, no API calls
+- **Mobile-friendly**: Flutter app, runs smoothly on low-end devices
 
 **When to use Malinali:**
-- Domain-specific translations (e.g., medical, legal, technical)
 - Low-resource languages with limited training data
-- Imperfect translation tolerated
+- __Imperfect translation tolerated__
 - Offline-first requirements
 - Privacy-sensitive applications
 - Resource-constrained environments
-
-## Features
-
-- **Hybrid Search**: Combines keyword-based (FTS) and semantic (vector similarity) search
-- **Offline**: All translations stored locally in SQLite
+- Domain-specific translations available for custom use (e.g., medical, legal, technical)
 
 ## Dataset
 
@@ -55,7 +45,6 @@ License-free french/english -> fula dataset from [awesome_fula_nl_resources](htt
 
 ## Future Improvements
 ### Better pickers
-
 - Allow users to select .db to avoid first init delay
 
 - Allow users to pick source/target translation texts to insert additional data or reset the app with their own custom data
@@ -64,11 +53,9 @@ License-free french/english -> fula dataset from [awesome_fula_nl_resources](htt
 
 ### French-Specific Embedding Models
 
-For even better French embedding quality, consider exploring French-specific models that work with `fonnx`:
+For better French embedding quality, consider exploring French-specific models that work with `fonnx`:
 
-- **French-optimized models**: Models like `sentence-camembert-base` or `dangvantuan/french-document-embedding` are specifically trained for French and may provide superior semantic similarity for French text
-- **ONNX compatibility**: These models would need to be exported to ONNX format and may require adjustments to `EmbeddingService` (input/output tensor names, embedding dimensions)
-- **Integration**: The `fonnx` package currently supports MiniLM architecture models; French-specific models may require additional adaptation or using lower-level ONNX APIs
+- **French-optimized models**: Models like `sentence-camembert-base` or `dangvantuan/french-document-embedding`
 
 Current model: `all-MiniLM-L6-v2` (monolingual, better for French-only comparisons than the previous multilingual model)
 
