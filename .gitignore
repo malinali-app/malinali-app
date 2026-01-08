@@ -45,11 +45,8 @@ app.*.map.json
 /android/app/release
 
 # Large model files and datasets (should use Git LFS or external storage)
-assets/models/*.onnx
-assets/models/tokenizer.json
-
-assets/src_fra_full.txt
-assets/tgt_ful_full.txt
+# assets/models/*.onnx
+# assets/models/tokenizer.json
 
 # CocoaPods
 **/Pods/

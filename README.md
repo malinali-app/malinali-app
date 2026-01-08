@@ -37,16 +37,6 @@ Translations may be imperfect, users need to review, evaluate, and select the mo
 - Resource-constrained environments
 - Domain-specific translations available for custom use (e.g., medical, legal, technical)
 
-## How to run
-
-1. download 
-- https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/blob/main/onnx/model.onnx
-- https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/blob/main/tokenizer.json
-
-2. paste them in assets/models/
-
-3. run the app and either import your own data or use default demo
-
 ## Demo Dataset
 
 less than a 1 000 lines from :
