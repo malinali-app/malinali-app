@@ -1,4 +1,6 @@
 // ignore_for_file: implementation_imports
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:fonnx/ort_minilm_isolate.dart';
 import 'package:malinali/services/multilingual_tokenizer.dart';
@@ -6,7 +8,7 @@ import 'package:fonnx/tokenizers/wordpiece_tokenizer.dart';
 import 'package:ml_linalg/vector.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:malinali/services/model_output_inspector.dart';
-import 'dart:io';
+import 'package:archive/archive.dart';
 
 /// Service for generating text embeddings using the ONNX model.
 ///
@@ -39,17 +41,39 @@ class EmbeddingService {
     if (_isInitialized) return;
 
     try {
-      // Copy model from assets to app directory (ONNX needs file path)
+      // Extract model from zipped assets to app directory (ONNX needs file path)
       final appDir = await getApplicationDocumentsDirectory();
       final modelFile = File('${appDir.path}/all-MiniLM-L6-v2.onnx');
       final tokenizerFile = File('${appDir.path}/tokenizer.json');
 
-      // Copy model if not exists
+      // Extract model from zip if not exists
       if (!await modelFile.exists()) {
-        final modelData = await rootBundle.load(
-          'assets/models/all-MiniLM-L6-v2.onnx',
+        print('Extracting ONNX model from zip...');
+        // Load zipped model from assets
+        final ByteData zipData = await rootBundle.load(
+          'assets/models/all-MiniLM-L6-v2.onnx.zip',
         );
-        await modelFile.writeAsBytes(modelData.buffer.asUint8List());
+        final Uint8List zipBytes = zipData.buffer.asUint8List();
+
+        // Decompress the zip file
+        final Archive archive = ZipDecoder().decodeBytes(zipBytes);
+        
+        // Get the model file from the archive
+        ArchiveFile? modelFileInArchive;
+        for (final file in archive) {
+          if (file.name == 'all-MiniLM-L6-v2.onnx' || file.name.endsWith('.onnx')) {
+            modelFileInArchive = file;
+            break;
+          }
+        }
+
+        if (modelFileInArchive == null) {
+          throw Exception('Model file not found in archive');
+        }
+
+        // Write model to app directory
+        await modelFile.writeAsBytes(modelFileInArchive.content as List<int>);
+        print('✅ Extracted ONNX model from zip');
       }
 
       // Always copy tokenizer from assets to ensure we have the correct version

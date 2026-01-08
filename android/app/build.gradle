@@ -48,16 +48,17 @@ android {
 
     buildTypes {
         debug {
-            minifyEnabled true
+            minifyEnabled false  // Disable minification for debug to avoid stripping JNI-accessed classes
         }
         profile {
             minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         release {
             signingConfig signingConfigs.release
             shrinkResources false
             minifyEnabled true
-            // proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }

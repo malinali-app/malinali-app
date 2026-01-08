@@ -36,6 +36,7 @@ dependencies:
   stemmer: any #^3.2.0
   file_picker: ^8.1.4
   sqlite3_flutter_libs: ^0.5.18
+  archive: ^3.4.0
 
 dev_dependencies:
   flutter_test:
@@ -62,11 +63,10 @@ flutter:
 
   # Assets
   assets:
-    - assets/models/all-MiniLM-L6-v2.onnx
+    - assets/models/all-MiniLM-L6-v2.onnx.zip
     - assets/models/tokenizer.json
-    - assets/src_fra.txt
-    - assets/tgt_ful.txt
     - assets/malinali_logo.jpg
+    - assets/malinali.db.zip
 
   fonts:
     - family: NotoSans

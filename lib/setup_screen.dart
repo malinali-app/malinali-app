@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:malinali/services/generate_embeddings.dart';
+import 'package:archive/archive.dart';
 
 /// Initial setup screen that allows users to either:
 /// 1. Select an existing SQLite database
@@ -34,7 +36,7 @@ class _SetupScreenState extends State<SetupScreen> {
       if (result != null && result.files.single.path != null) {
         setState(() {
           _isProcessing = true;
-          _statusMessage = 'Copying database...';
+          _statusMessage = 'Copie de la base de données...';
         });
 
         final selectedPath = result.files.single.path!;
@@ -68,7 +70,7 @@ class _SetupScreenState extends State<SetupScreen> {
     } catch (e) {
       setState(() {
         _isProcessing = false;
-        _statusMessage = 'Error: $e';
+        _statusMessage = 'Erreur : $e';
       });
     }
   }
@@ -77,101 +79,57 @@ class _SetupScreenState extends State<SetupScreen> {
     try {
       setState(() {
         _isProcessing = true;
-        _statusMessage = 'Loading default demo files from assets...';
-      });
-
-      // Load asset files
-      final sourceContent = await rootBundle.loadString('assets/src_fra.txt');
-      final targetContent = await rootBundle.loadString('assets/tgt_ful.txt');
-
-      // Write to temporary files (generateEmbeddingsFromFiles expects file paths)
-      final appDir = await getApplicationDocumentsDirectory();
-      final tempDir = Directory('${appDir.path}/temp');
-      if (!await tempDir.exists()) {
-        await tempDir.create(recursive: true);
-      }
-
-      final sourcePath = '${tempDir.path}/src_fra.txt';
-      final targetPath = '${tempDir.path}/tgt_ful.txt';
-
-      await File(sourcePath).writeAsString(sourceContent);
-      await File(targetPath).writeAsString(targetContent);
-
-      // Validate line counts
-      setState(() {
-        _statusMessage = 'Validating files...';
-      });
-
-      final sourceLines =
-          sourceContent
-              .split('\n')
-              .map((line) => line.trim())
-              .where((line) => line.isNotEmpty)
-              .toList();
-      final targetLines =
-          targetContent
-              .split('\n')
-              .map((line) => line.trim())
-              .where((line) => line.isNotEmpty)
-              .toList();
-
-      if (sourceLines.length != targetLines.length) {
-        setState(() {
-          _isProcessing = false;
-          _statusMessage =
-              'Error: Files have different line counts.\n'
-              'Source: ${sourceLines.length}, Target: ${targetLines.length}';
-        });
-        return;
-      }
-
-      // Generate embeddings
-      setState(() {
-        _statusMessage = 'Generating embeddings (this may take a while)...';
+        _statusMessage = 'Chargement de la base de données...';
         _progressCurrent = 0;
-        _progressTotal = sourceLines.length;
+        _progressTotal = 0;
       });
 
-      final dbPath = '${appDir.path}/malinali.db';
+      // Load zipped database from assets
+      final ByteData zipData = await rootBundle.load('assets/malinali.db.zip');
+      final Uint8List zipBytes = zipData.buffer.asUint8List();
 
-      await generateEmbeddingsFromFiles(
-        sourceFilePath: sourcePath,
-        targetFilePath: targetPath,
-        dbPath: dbPath,
-        searcherId: 'fula',
-        onProgress: (current, total) {
-          if (mounted) {
-            setState(() {
-              _progressCurrent = current;
-              _progressTotal = total;
-              _statusMessage =
-                  'Generating embeddings: $current / $total (${((current / total) * 100).toStringAsFixed(1)}%)';
-            });
-          }
-        },
-      );
+      // Decompress the zip file
+      setState(() {
+        _statusMessage = 'Décompression de la base de données...';
+      });
+
+      final Archive archive = ZipDecoder().decodeBytes(zipBytes);
+      
+      // Get the database file from the archive
+      ArchiveFile? dbFileInArchive;
+      for (final file in archive) {
+        if (file.name == 'malinali.db' || file.name.endsWith('.db')) {
+          dbFileInArchive = file;
+          break;
+        }
+      }
+
+      if (dbFileInArchive == null) {
+        throw Exception('Database file not found in archive');
+      }
+
+      // Write database to app directory
+      final appDir = await getApplicationDocumentsDirectory();
+      final dbPath = '${appDir.path}/malinali.db';
+      
+      setState(() {
+        _statusMessage = 'Copie de la base de données...';
+      });
+
+      final dbFile = File(dbPath);
+      await dbFile.writeAsBytes(dbFileInArchive.content as List<int>);
 
       // Verify database was created
-      final dbFile = File(dbPath);
       if (!await dbFile.exists()) {
         throw Exception('Database file was not created at $dbPath');
       }
       final dbStat = await dbFile.stat();
-      print('✅ Database created successfully at: $dbPath');
+      print('✅ Database extracted successfully at: $dbPath');
       print('   Database size: ${dbStat.size} bytes');
       print('   Database modified: ${dbStat.modified}');
 
-      // Clean up temporary files
-      try {
-        await File(sourcePath).delete();
-        await File(targetPath).delete();
-      } catch (e) {
-        // Ignore cleanup errors
-        print('Warning: Could not clean up temp files: $e');
-      }
-
       setState(() {
-        _statusMessage = '✅ Database created successfully!';
+        _statusMessage = '✅ Base de données chargée avec succès !';
       });
 
       // Wait a moment to show success message
@@ -189,7 +147,7 @@ class _SetupScreenState extends State<SetupScreen> {
     } catch (e) {
       setState(() {
         _isProcessing = false;
-        _statusMessage = 'Error: $e';
+        _statusMessage = 'Erreur : $e';
       });
     }
   }
@@ -198,7 +156,7 @@ class _SetupScreenState extends State<SetupScreen> {
     try {
       setState(() {
         _isProcessing = true;
-        _statusMessage = 'Please select source file (e.g., French)...';
+        _statusMessage = 'Veuillez sélectionner le fichier source (ex. Français)...';
       });
 
       // Select source file
@@ -218,7 +176,7 @@ class _SetupScreenState extends State<SetupScreen> {
       final sourcePath = sourceResult.files.single.path!;
 
       setState(() {
-        _statusMessage = 'Please select target file (e.g., Fula)...';
+        _statusMessage = 'Veuillez sélectionner le fichier cible (ex. Pulaar)...';
       });
 
       // Select target file
@@ -239,7 +197,7 @@ class _SetupScreenState extends State<SetupScreen> {
 
       // Validate line counts
       setState(() {
-        _statusMessage = 'Validating files...';
+        _statusMessage = 'Validation des fichiers...';
       });
 
       final sourceFile = File(sourcePath);
@@ -265,15 +223,15 @@ class _SetupScreenState extends State<SetupScreen> {
         setState(() {
           _isProcessing = false;
           _statusMessage =
-              'Error: Files have different line counts.\n'
-              'Source: ${sourceLines.length}, Target: ${targetLines.length}';
+              'Erreur : Les fichiers ont un nombre de lignes différent.\n'
+              'Source : ${sourceLines.length}, Cible : ${targetLines.length}';
         });
         return;
       }
 
       // Generate embeddings
       setState(() {
-        _statusMessage = 'Generating embeddings (this may take a while)...';
+        _statusMessage = 'Génération des embeddings (cela peut prendre un moment)...';
         _progressCurrent = 0;
         _progressTotal = sourceLines.length;
       });
@@ -292,7 +250,7 @@ class _SetupScreenState extends State<SetupScreen> {
               _progressCurrent = current;
               _progressTotal = total;
               _statusMessage =
-                  'Generating embeddings: $current / $total (${((current / total) * 100).toStringAsFixed(1)}%)';
+                  'Génération des embeddings : $current / $total (${((current / total) * 100).toStringAsFixed(1)}%)';
             });
           }
         },
@@ -309,7 +267,7 @@ class _SetupScreenState extends State<SetupScreen> {
       print('   Database modified: ${dbStat.modified}');
 
       setState(() {
-        _statusMessage = '✅ Database created successfully!';
+        _statusMessage = '✅ Base de données créée avec succès !';
       });
 
       // Wait a moment to show success message
@@ -327,7 +285,7 @@ class _SetupScreenState extends State<SetupScreen> {
     } catch (e) {
       setState(() {
         _isProcessing = false;
-        _statusMessage = 'Error: $e';
+        _statusMessage = 'Erreur : $e';
       });
     }
   }
@@ -342,12 +300,12 @@ class _SetupScreenState extends State<SetupScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Text(
-                'Welcome to Malinali',
+                'Bienvenue dans Malinali',
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               const Text(
-                'Choose how you want to set up the translation database:',
+                'Choisissez comment configurer la base de données de traduction :',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 16, color: Colors.grey),
               ),
@@ -393,7 +351,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 child: ElevatedButton.icon(
                   onPressed: _isProcessing ? null : _selectDatabase,
                   icon: const Icon(Icons.storage),
-                  label: const Text('Select SQLite Database'),
+                  label: const Text('Sélectionner une base de données SQLite'),
                   style: ElevatedButton.styleFrom(
                     textStyle: const TextStyle(fontSize: 16),
                   ),
@@ -406,7 +364,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 child: ElevatedButton.icon(
                   onPressed: _isProcessing ? null : _selectTextFiles,
                   icon: const Icon(Icons.text_snippet),
-                  label: const Text('Select Source & Target Files (.txt)'),
+                  label: const Text('Sélectionner des fichiers source/cible (.txt)'),
                   style: ElevatedButton.styleFrom(
                     textStyle: const TextStyle(fontSize: 16),
                   ),
@@ -419,7 +377,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 child: ElevatedButton.icon(
                   onPressed: _isProcessing ? null : _useDefaultDemo,
                   icon: const Icon(Icons.play_circle_outline),
-                  label: const Text('Use Default Demo'),
+                  label: const Text('Utiliser la démo par défaut'),
                   style: ElevatedButton.styleFrom(
                     textStyle: const TextStyle(fontSize: 16),
                     backgroundColor: Colors.green,
@@ -428,7 +386,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
               ),
               if (_statusMessage != null &&
-                  _statusMessage!.startsWith('Error:'))
+                  _statusMessage!.startsWith('Erreur'))
                 Padding(
                   padding: const EdgeInsets.only(top: 16),
                   child: Text(

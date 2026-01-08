@@ -10,6 +10,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:malinali/services/embedding_service.dart';
 import 'package:malinali/services/query_stemmer.dart';
 import 'package:malinali/setup_screen.dart';
+import 'package:malinali/services/generate_embeddings.dart';
+import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 
 void main() async {
@@ -143,6 +145,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
   late CodeLineEditingController _outputController;
   late FocusNode _inputFocusNode;
   HybridFTSSearcher? _searcher;
+  SQLiteNeighborSearchStore? _store; // Keep reference to store to close it properly
   EmbeddingService? _embeddingService;
   bool _isLoading = true;
   bool _isTranslating = false;
@@ -151,6 +154,9 @@ class _TranslationScreenState extends State<TranslationScreen> {
   String? _error;
   TranslationDirection _direction = TranslationDirection.frenchToFula;
   bool _hasInputText = false; // Track if input has text for clear button visibility
+  String? _statusMessage; // Status message for detailed loader
+  int _progressCurrent = 0;
+  int _progressTotal = 0;
 
   // Helper to get display name for UI (keeps logic consistent with 'French'/'Fula')
   String _getDisplayName(String lang) {
@@ -221,7 +227,11 @@ class _TranslationScreenState extends State<TranslationScreen> {
         return;
       }
 
+      // Close previous store if it exists
+      _store?.close();
+      
       final store = SQLiteNeighborSearchStore(dbPath);
+      _store = store; // Keep reference
 
       // Load existing searcher from database
       HybridFTSSearcher? searcher;
@@ -255,6 +265,9 @@ class _TranslationScreenState extends State<TranslationScreen> {
         _searcher = searcher;
         _embeddingService = embeddingService;
         _isLoading = false;
+        _statusMessage = null; // Clear status message after successful initialization
+        _progressCurrent = 0;
+        _progressTotal = 0;
       });
     } catch (e) {
       setState(() {
@@ -664,7 +677,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
       // Build Semantic column (first - better results)
       buffer.writeln('✨ Semantic');
       if (semanticResultsFinal.isEmpty) {
-        buffer.writeln('No match');
+        buffer.writeln('Aucun résultat');
       } else {
         for (var i = 0; i < semanticResultsFinal.length; i++) {
           buffer.writeln(formatResult(semanticResultsFinal[i], i, false));
@@ -675,7 +688,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
       buffer.writeln('');
       buffer.writeln('🔤 Keyword');
       if (ftsResults.isEmpty) {
-        buffer.writeln('No match');
+        buffer.writeln('Aucun résultat');
       } else {
         for (var i = 0; i < ftsResults.length; i++) {
           final isExact = hasExactFtsMatch && i == 0;
@@ -701,6 +714,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
     _outputController.dispose();
     _inputFocusNode.dispose();
     _embeddingService?.dispose();
+    _store?.close(); // Close database connection
     super.dispose();
   }
 
@@ -732,7 +746,53 @@ class _TranslationScreenState extends State<TranslationScreen> {
   Widget build(BuildContext context) {
     Widget bodyContent;
     if (_isLoading) {
-      bodyContent = const Center(child: CircularProgressIndicator());
+      // Show detailed loader with progress if available
+      if (_statusMessage != null) {
+        bodyContent = Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        _statusMessage!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                      if (_progressTotal > 0) ...[
+                        const SizedBox(height: 12),
+                        LinearProgressIndicator(
+                          value: _progressCurrent / _progressTotal,
+                          backgroundColor: Colors.grey.shade300,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '$_progressCurrent / $_progressTotal',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      } else {
+        bodyContent = const Center(child: CircularProgressIndicator());
+      }
     } else if (_error != null) {
       bodyContent = Center(
         child: Padding(
@@ -872,7 +932,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.play_arrow),
-                label: const Text('Translate'),
+                label: const Text('Traduire'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16.0),
                   elevation: 2,
@@ -922,7 +982,268 @@ class _TranslationScreenState extends State<TranslationScreen> {
       );
     }
 
-    return Scaffold(body: SafeArea(child: bodyContent));
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Malinali'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: _showSettingsDialog,
+            tooltip: 'Paramètres',
+          ),
+        ],
+      ),
+      body: SafeArea(child: bodyContent),
+    );
+  }
+
+  Future<void> _showSettingsDialog() async {
+    final option = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Paramètres'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.storage),
+              title: const Text('Sélectionner une base de données SQLite'),
+              onTap: () => Navigator.of(context).pop('database'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.text_snippet),
+              title: const Text('Sélectionner des fichiers source/cible'),
+              onTap: () => Navigator.of(context).pop('files'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (option == null) return;
+
+    // Show warning dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Attention'),
+        content: const Text(
+          'Toutes les données actuelles seront perdues. '
+          'Voulez-vous continuer ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Continuer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    if (option == 'database') {
+      await _selectDatabase();
+    } else if (option == 'files') {
+      await _selectTextFiles();
+    }
+  }
+
+  Future<void> _selectDatabase() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+        _statusMessage = 'Copie de la base de données...';
+        _progressCurrent = 0;
+        _progressTotal = 0;
+      });
+
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['db', 'sqlite'],
+      );
+
+      if (result == null || result.files.single.path == null) {
+        setState(() {
+          _isLoading = false;
+          _statusMessage = null;
+        });
+        return;
+      }
+
+      final selectedPath = result.files.single.path!;
+      final appDir = await getApplicationDocumentsDirectory();
+      final targetPath = '${appDir.path}/malinali.db';
+
+      // Close current searcher and store to release database lock
+      _searcher = null;
+      _store?.close();
+      _store = null;
+      
+      // Wait a bit to ensure file handles are released
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      // Delete existing database
+      final targetFile = File(targetPath);
+      if (await targetFile.exists()) {
+        await targetFile.delete();
+      }
+
+      // Copy selected database
+      await File(selectedPath).copy(targetPath);
+      print('✅ Database copied to: $targetPath');
+      
+      setState(() {
+        _statusMessage = 'Chargement de la base de données...';
+      });
+
+      // Reinitialize searcher
+      await _initializeSearcher();
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Erreur lors de la sélection de la base de données: $e';
+        _statusMessage = null;
+      });
+    }
+  }
+
+  Future<void> _selectTextFiles() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+        _statusMessage = 'Veuillez sélectionner le fichier source (ex. Français)...';
+        _progressCurrent = 0;
+        _progressTotal = 0;
+      });
+
+      // Select source file
+      final sourceResult = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['txt'],
+      );
+
+      if (sourceResult == null || sourceResult.files.single.path == null) {
+        setState(() {
+          _isLoading = false;
+          _statusMessage = null;
+        });
+        return;
+      }
+
+      final sourcePath = sourceResult.files.single.path!;
+
+      setState(() {
+        _statusMessage = 'Veuillez sélectionner le fichier cible (ex. Pulaar)...';
+      });
+
+      // Select target file
+      final targetResult = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['txt'],
+      );
+
+      if (targetResult == null || targetResult.files.single.path == null) {
+        setState(() {
+          _isLoading = false;
+          _statusMessage = null;
+        });
+        return;
+      }
+
+      final targetPath = targetResult.files.single.path!;
+
+      // Close current searcher and store to release database lock
+      _searcher = null;
+      _store?.close();
+      _store = null;
+      
+      // Wait a bit to ensure file handles are released
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      // Delete existing database
+      final appDir = await getApplicationDocumentsDirectory();
+      final dbPath = '${appDir.path}/malinali.db';
+      final dbFile = File(dbPath);
+      if (await dbFile.exists()) {
+        await dbFile.delete();
+      }
+
+      // Validate line counts
+      setState(() {
+        _statusMessage = 'Validation des fichiers...';
+      });
+
+      final sourceFile = File(sourcePath);
+      final targetFile = File(targetPath);
+      final sourceContent = await sourceFile.readAsString();
+      final targetContent = await targetFile.readAsString();
+      final sourceLines = sourceContent
+          .split('\n')
+          .map((line) => line.trim())
+          .where((line) => line.isNotEmpty)
+          .toList();
+      final targetLines = targetContent
+          .split('\n')
+          .map((line) => line.trim())
+          .where((line) => line.isNotEmpty)
+          .toList();
+
+      if (sourceLines.length != targetLines.length) {
+        setState(() {
+          _isLoading = false;
+          _error = 'Erreur : Les fichiers ont un nombre de lignes différent.\n'
+              'Source : ${sourceLines.length}, Cible : ${targetLines.length}';
+          _statusMessage = null;
+        });
+        return;
+      }
+
+      // Generate embeddings from files
+      setState(() {
+        _statusMessage = 'Génération des embeddings (cela peut prendre un moment)...';
+        _progressCurrent = 0;
+        _progressTotal = sourceLines.length;
+      });
+
+      await generateEmbeddingsFromFiles(
+        sourceFilePath: sourcePath,
+        targetFilePath: targetPath,
+        dbPath: dbPath,
+        searcherId: 'fula',
+        onProgress: (current, total) {
+          if (mounted) {
+            setState(() {
+              _progressCurrent = current;
+              _progressTotal = total;
+              _statusMessage =
+                  'Génération des embeddings : $current / $total (${((current / total) * 100).toStringAsFixed(1)}%)';
+            });
+          }
+        },
+      );
+      
+      setState(() {
+        _statusMessage = 'Chargement de la base de données...';
+      });
+
+      print('✅ Database created from text files');
+
+      // Reinitialize searcher
+      await _initializeSearcher();
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = 'Erreur lors de la génération de la base de données: $e';
+        _statusMessage = null;
+      });
+    }
   }
 }
 
