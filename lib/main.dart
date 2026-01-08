@@ -1,4 +1,5 @@
 // ignore_for_file: implementation_imports
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:re_editor/re_editor.dart';
 import 'package:ml_algo/src/persistence/sqlite_neighbor_search_store.dart';
@@ -11,7 +12,12 @@ import 'package:malinali/services/query_stemmer.dart';
 import 'package:malinali/setup_screen.dart';
 import 'dart:io';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // SQLite3 is automatically initialized by sqlite3_flutter_libs plugin on Android
+  // The plugin handles loading the native library automatically
+  
   runApp(const MalinaliApp());
 }
 
@@ -25,6 +31,8 @@ class MalinaliApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
+        // Use Noto Sans for better Unicode support (especially for Fula characters)
+        fontFamily: 'NotoSans',
       ),
       debugShowCheckedModeBanner: false,
       home: const InitialScreen(),
@@ -56,6 +64,15 @@ class _InitialScreenState extends State<InitialScreen> {
       final dbPath = '${appDir.path}/malinali.db';
       final dbFile = File(dbPath);
       final exists = await dbFile.exists();
+      
+      // Debug logging
+      print('🔍 Checking database at: $dbPath');
+      print('   Database exists: $exists');
+      if (exists) {
+        final stat = await dbFile.stat();
+        print('   Database size: ${stat.size} bytes');
+        print('   Database modified: ${stat.modified}');
+      }
 
       if (mounted) {
         setState(() {
@@ -63,16 +80,25 @@ class _InitialScreenState extends State<InitialScreen> {
           _isChecking = false;
         });
 
-        // If database exists, go to translation screen
+        // If database exists and has content (size > 0), go to translation screen
         if (exists) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (context) => const TranslationScreen(),
-            ),
-          );
+          final stat = await dbFile.stat();
+          if (stat.size > 0) {
+            print('✅ Database found and valid, navigating to TranslationScreen');
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (context) => const TranslationScreen(),
+              ),
+            );
+          } else {
+            print('⚠️  Database file exists but is empty, showing setup screen');
+          }
+        } else {
+          print('ℹ️  Database not found, showing setup screen');
         }
       }
     } catch (e) {
+      print('❌ Error checking database: $e');
       if (mounted) {
         setState(() {
           _isChecking = false;
@@ -115,6 +141,7 @@ class TranslationScreen extends StatefulWidget {
 class _TranslationScreenState extends State<TranslationScreen> {
   late CodeLineEditingController _inputController;
   late CodeLineEditingController _outputController;
+  late FocusNode _inputFocusNode;
   HybridFTSSearcher? _searcher;
   EmbeddingService? _embeddingService;
   bool _isLoading = true;
@@ -123,6 +150,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
   String _targetLang = 'Fula'; // Default: French → Fula
   String? _error;
   TranslationDirection _direction = TranslationDirection.frenchToFula;
+  bool _hasInputText = false; // Track if input has text for clear button visibility
 
   // Helper to get display name for UI (keeps logic consistent with 'French'/'Fula')
   String _getDisplayName(String lang) {
@@ -155,6 +183,22 @@ class _TranslationScreenState extends State<TranslationScreen> {
     super.initState();
     _inputController = CodeLineEditingController();
     _outputController = CodeLineEditingController();
+    _inputFocusNode = FocusNode();
+    
+    // Track input text changes to show/hide clear button
+    _inputController.addListener(() {
+      final hasText = _inputController.text.trim().isNotEmpty;
+      if (_hasInputText != hasText) {
+        setState(() {
+          _hasInputText = hasText;
+        });
+      }
+      // Debug: log when text changes
+      if (kDebugMode) {
+        print('Input text changed: "${_inputController.text}"');
+      }
+    });
+    
     _initializeSearcher();
   }
 
@@ -655,6 +699,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
   void dispose() {
     _inputController.dispose();
     _outputController.dispose();
+    _inputFocusNode.dispose();
     _embeddingService?.dispose();
     super.dispose();
   }
@@ -764,13 +809,48 @@ class _TranslationScreenState extends State<TranslationScreen> {
                     ),
                   ),
                   Expanded(
-                    child: CodeEditor(
-                      controller: _inputController,
-                      style: const CodeEditorStyle(
-                        fontSize: 16,
-                        fontFamily: 'monospace',
-                      ),
-                      autocompleteSymbols: false,
+                    child: Stack(
+                      children: [
+                        CodeEditor(
+                          controller: _inputController,
+                          style: const CodeEditorStyle(
+                            fontSize: 16,
+                            // Use NotoSans from assets for better Unicode support (Fula characters)
+                            fontFamily: 'NotoSans',
+                          ),
+                          autocompleteSymbols: false,
+                          // Use persistent focus node to avoid Android input issues
+                          focusNode: _inputFocusNode,
+                        ),
+                        // Clear button - bottom right corner, only visible when there's text
+                        if (_hasInputText)
+                          Positioned(
+                            bottom: 8,
+                            right: 8,
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () {
+                                  _inputController.text = '';
+                                  // Focus will be maintained automatically
+                                },
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade200.withOpacity(0.9),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Icon(
+                                    Icons.clear,
+                                    size: 18,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ],
@@ -829,7 +909,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
                       readOnly: true,
                       style: const CodeEditorStyle(
                         fontSize: 16,
-                        fontFamily: 'monospace',
+                        // Use NotoSans from assets for better Unicode support (Fula characters)
+                        fontFamily: 'NotoSans',
                       ),
                     ),
                   ),

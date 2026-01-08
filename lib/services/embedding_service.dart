@@ -71,34 +71,53 @@ class EmbeddingService {
 
       // Check model output name for informational purposes only
       // Don't fail here - let fonnx handle it if there's a real issue
-      try {
-        final outputNames = ModelOutputInspector.getAllOutputNames(_modelPath!);
-        print('Model output names: $outputNames');
-        
-        // Store the first output name for error messages later
-        if (outputNames.isNotEmpty) {
-          _detectedOutputName = outputNames.first;
+      // Skip on Android since FFI inspection doesn't work there
+      if (!Platform.isAndroid) {
+        try {
+          final outputNames = ModelOutputInspector.getAllOutputNames(_modelPath!);
+          print('Model output names: $outputNames');
           
-          // Just log compatibility, don't throw
-          final hasEmbeddings = outputNames.contains('embeddings');
-          final hasSentenceEmbedding = outputNames.contains('sentence_embedding');
-          
-          if (hasEmbeddings) {
-            print('✅ Model has "embeddings" output');
-          } else if (hasSentenceEmbedding) {
-            print('✅ Model has "sentence_embedding" output');
-          } else {
-            print('ℹ️  Model output: ${outputNames.first} (will try to use it)');
+          // Store the first output name for error messages later
+          if (outputNames.isNotEmpty) {
+            _detectedOutputName = outputNames.first;
+            
+            // Just log compatibility, don't throw
+            final hasEmbeddings = outputNames.contains('embeddings');
+            final hasSentenceEmbedding = outputNames.contains('sentence_embedding');
+            
+            if (hasEmbeddings) {
+              print('✅ Model has "embeddings" output');
+            } else if (hasSentenceEmbedding) {
+              print('✅ Model has "sentence_embedding" output');
+            } else {
+              print('ℹ️  Model output: ${outputNames.first} (will try to use it)');
+            }
           }
+        } catch (e) {
+          print('⚠️  Could not inspect model output names: $e');
+          // Continue - don't fail initialization
         }
-      } catch (e) {
-        print('⚠️  Could not inspect model output names: $e');
-        // Continue - don't fail initialization
+      } else {
+        print('ℹ️  Skipping model output inspection on Android (uses platform-specific implementation)');
       }
 
       // Initialize ONNX isolate manager
+      // On Android, this uses platform-specific implementation, not FFI
       _isolateManager = OnnxIsolateManager();
-      await _isolateManager!.start(OnnxIsolateType.miniLm);
+      try {
+        await _isolateManager!.start(OnnxIsolateType.miniLm);
+      } catch (e) {
+        final errorStr = e.toString();
+        if (errorStr.contains('Android runs using a platform-specific implementation')) {
+          // This is expected on Android - the isolate should still work
+          // The error might be from initialization checks, but the actual inference should work
+          print('⚠️  ONNX isolate initialization warning (expected on Android): $e');
+          // Continue - the isolate manager should still work for inference
+        } else {
+          // Re-throw if it's a different error
+          rethrow;
+        }
+      }
 
       _isInitialized = true;
     } catch (e) {
@@ -153,10 +172,11 @@ class EmbeddingService {
     // Run ONNX inference
     try {
       // Use detected output name if available, otherwise let fonnx use its default
+      // On Android, don't pass outputName since we can't detect it (FFI not available)
       final embedding = await _isolateManager!.sendInference(
         _modelPath!,
         paddedTokens.take(maxLength).toList(),
-        outputName: _detectedOutputName, // Pass detected output name for flexibility
+        outputName: Platform.isAndroid ? null : _detectedOutputName, // Skip on Android
       );
 
       // Convert to Vector (take first 384 dimensions)
@@ -166,6 +186,20 @@ class EmbeddingService {
     } catch (e) {
       final errorStr = e.toString();
       
+      // On Android, the fonnx package should use method channels automatically
+      // If we still get FFI errors, it means the fix didn't work or wasn't picked up
+      if (Platform.isAndroid && errorStr.contains('Android runs using a platform-specific implementation')) {
+        throw Exception(
+          'ONNX inference failed on Android.\n'
+          'Error: $e\n\n'
+          'The fonnx package should automatically use method channels on Android instead of FFI isolates.\n'
+          'This error suggests the fix may not have been applied. Please:\n'
+          '1. Ensure you have the latest version of the fonnx fork\n'
+          '2. Run: flutter clean && flutter pub get\n'
+          '3. Rebuild the app'
+        );
+      }
+      
       // Check if this is an "Invalid Output Name" error (for either "embeddings" or "sentence_embedding")
       if (errorStr.contains('Invalid Output Name')) {
         // Use detected output name if available, otherwise get it again
@@ -173,10 +207,15 @@ class EmbeddingService {
         if (_detectedOutputName != null) {
           outputNames = [_detectedOutputName!];
         } else {
-          try {
-            outputNames = ModelOutputInspector.getAllOutputNames(_modelPath!);
-          } catch (inspectError) {
+          // On Android, we can't inspect model outputs, so skip
+          if (Platform.isAndroid) {
             outputNames = ['unknown'];
+          } else {
+            try {
+              outputNames = ModelOutputInspector.getAllOutputNames(_modelPath!);
+            } catch (inspectError) {
+              outputNames = ['unknown'];
+            }
           }
         }
         

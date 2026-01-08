@@ -44,9 +44,16 @@ class _SetupScreenState extends State<SetupScreen> {
         // Copy the selected database to malinali.db
         final sourceFile = File(selectedPath);
         final targetFile = File(targetPath);
+        
+        // Delete existing database if it exists (to ensure clean copy)
+        if (await targetFile.exists()) {
+          await targetFile.delete();
+        }
 
         await sourceFile.copy(targetPath);
+        final copiedStat = await File(targetPath).stat();
         print('✅ Database copied to: $targetPath');
+        print('   Copied database size: ${copiedStat.size} bytes');
 
         // Call completion callback
         if (mounted) {
@@ -95,16 +102,18 @@ class _SetupScreenState extends State<SetupScreen> {
         _statusMessage = 'Validating files...';
       });
 
-      final sourceLines = sourceContent
-          .split('\n')
-          .map((line) => line.trim())
-          .where((line) => line.isNotEmpty)
-          .toList();
-      final targetLines = targetContent
-          .split('\n')
-          .map((line) => line.trim())
-          .where((line) => line.isNotEmpty)
-          .toList();
+      final sourceLines =
+          sourceContent
+              .split('\n')
+              .map((line) => line.trim())
+              .where((line) => line.isNotEmpty)
+              .toList();
+      final targetLines =
+          targetContent
+              .split('\n')
+              .map((line) => line.trim())
+              .where((line) => line.isNotEmpty)
+              .toList();
 
       if (sourceLines.length != targetLines.length) {
         setState(() {
@@ -141,6 +150,16 @@ class _SetupScreenState extends State<SetupScreen> {
           }
         },
       );
+
+      // Verify database was created
+      final dbFile = File(dbPath);
+      if (!await dbFile.exists()) {
+        throw Exception('Database file was not created at $dbPath');
+      }
+      final dbStat = await dbFile.stat();
+      print('✅ Database created successfully at: $dbPath');
+      print('   Database size: ${dbStat.size} bytes');
+      print('   Database modified: ${dbStat.modified}');
 
       // Clean up temporary files
       try {
@@ -229,16 +248,18 @@ class _SetupScreenState extends State<SetupScreen> {
       final sourceContent = await sourceFile.readAsString();
       final targetContent = await targetFile.readAsString();
 
-      final sourceLines = sourceContent
-          .split('\n')
-          .map((line) => line.trim())
-          .where((line) => line.isNotEmpty)
-          .toList();
-      final targetLines = targetContent
-          .split('\n')
-          .map((line) => line.trim())
-          .where((line) => line.isNotEmpty)
-          .toList();
+      final sourceLines =
+          sourceContent
+              .split('\n')
+              .map((line) => line.trim())
+              .where((line) => line.isNotEmpty)
+              .toList();
+      final targetLines =
+          targetContent
+              .split('\n')
+              .map((line) => line.trim())
+              .where((line) => line.isNotEmpty)
+              .toList();
 
       if (sourceLines.length != targetLines.length) {
         setState(() {
@@ -277,6 +298,16 @@ class _SetupScreenState extends State<SetupScreen> {
         },
       );
 
+      // Verify database was created
+      final dbFile = File(dbPath);
+      if (!await dbFile.exists()) {
+        throw Exception('Database file was not created at $dbPath');
+      }
+      final dbStat = await dbFile.stat();
+      print('✅ Database created successfully at: $dbPath');
+      print('   Database size: ${dbStat.size} bytes');
+      print('   Database modified: ${dbStat.modified}');
+
       setState(() {
         _statusMessage = '✅ Database created successfully!';
       });
@@ -304,37 +335,21 @@ class _SetupScreenState extends State<SetupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Malinali Setup'),
-        centerTitle: true,
-      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
-                Icons.translate,
-                size: 64,
-                color: Colors.blue,
-              ),
-              const SizedBox(height: 24),
               const Text(
                 'Welcome to Malinali',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               const Text(
                 'Choose how you want to set up the translation database:',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey,
-                ),
+                style: TextStyle(fontSize: 16, color: Colors.grey),
               ),
               const SizedBox(height: 48),
               if (_statusMessage != null) ...[
@@ -412,15 +427,13 @@ class _SetupScreenState extends State<SetupScreen> {
                   ),
                 ),
               ),
-              if (_statusMessage != null && _statusMessage!.startsWith('Error:'))
+              if (_statusMessage != null &&
+                  _statusMessage!.startsWith('Error:'))
                 Padding(
                   padding: const EdgeInsets.only(top: 16),
                   child: Text(
                     _statusMessage!,
-                    style: const TextStyle(
-                      color: Colors.red,
-                      fontSize: 14,
-                    ),
+                    style: const TextStyle(color: Colors.red, fontSize: 14),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -431,4 +444,3 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 }
-

@@ -1,13 +1,26 @@
 // ignore_for_file: implementation_imports
 import 'dart:ffi';
+import 'dart:io';
 import 'package:fonnx/onnx/ort.dart';
 import 'package:ffi/ffi.dart';
 
 /// Helper class to inspect ONNX model output names
 class ModelOutputInspector {
+  /// Checks if FFI-based inspection is available on this platform
+  /// Android uses platform-specific implementations, not FFI
+  static bool get _isFfiAvailable {
+    // FFI inspection doesn't work on Android - it uses platform-specific implementations
+    return !Platform.isAndroid;
+  }
+
   /// Gets the first output name from the model
   /// This is useful when the fonnx package expects "embeddings" but the model has a different name
   static String? getFirstOutputName(String modelPath) {
+    if (!_isFfiAvailable) {
+      print('⚠️  Model output inspection not available on Android (uses platform-specific implementation)');
+      return null;
+    }
+    
     try {
       final sessionObjects = createOrtSession(modelPath);
       final outputCount = sessionObjects.api.sessionGetOutputCount(
@@ -38,6 +51,11 @@ class ModelOutputInspector {
   
   /// Gets all output names from the model
   static List<String> getAllOutputNames(String modelPath) {
+    if (!_isFfiAvailable) {
+      print('⚠️  Model output inspection not available on Android (uses platform-specific implementation)');
+      return [];
+    }
+    
     try {
       final sessionObjects = createOrtSession(modelPath);
       final outputCount = sessionObjects.api.sessionGetOutputCount(

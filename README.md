@@ -1,6 +1,16 @@
-# Malinali - Local Translation App
+# Malinali - Offline Translation App
 
 An offline-first Flutter app for translation using retrieval-based translation combining Full Text Search (FTS) and Semantic Search on any datasets.
+
+## French Context
+
+Malinali est une application de traduction flutter qui fonctionne hors-ligne sur tous les OS, mobiles inclus.
+Elle combine recherche sémantique (vectorielle) & recherche par mots clés (full text search)
+La démo inclus x800 expressions pour tester la traduction du français => pulaar
+
+Si la qualité des résultats dépend du jeu de données, le système est bien moins efficace que les outils en ligne de MachineTranslation / LLM. Mais c'est une appli libre et gratuite qui permet même d'importer son propre jeu de donnée (dataset).
+
+Un outil pour découvrir/explorer le pulaar voire même d'autres langues dites "low-resources" pour lesquelles il y a peu d'offres.
 
 ## Context
 
@@ -25,24 +35,22 @@ This approach is **imperfect but pragmatic**:
 - **Works offline**: All data stored locally, no API calls
 - **Mobile-friendly**: Flutter app, runs smoothly on low-end devices
 
-**Caveats**:
-Translations may be imperfect, users need to review, evaluate, and select the most relevant and options from the suggestions, provided they are in indeed accurate or else discard them and
-
 **When to use Malinali:**
 
 - Low-resource languages with limited training data
-- __translations Hands on assessment/selection__
 - Offline-first requirements
 - Privacy-sensitive applications
 - Resource-constrained environments
+- Users ready to review, evaluate suggestions, provided they are accurate
 - Domain-specific translations available for custom use (e.g., medical, legal, technical)
 
 ## Demo Dataset
 
-less than a 1 000 lines from :
-License-free french/english -> fula dataset from [awesome_fula_nl_resources](https://github.com/flutter-painter/awesome_fula_nl_resources)
-
-Full versions contains 15 000 french/english/fula and yields quick results
+License-free x800 lines french -> fula dataset from [awesome_fula_nl_resources](https://github.com/flutter-painter/awesome_fula_nl_resources)
+Full versions contains x15 000 lines and still yields quick results :
+  - [french](https://github.com/flutter-painter/awesome_fula_nl_resources/blob/main/src_fra_license_free.txt)
+  - [fula](https://github.com/flutter-painter/awesome_fula_nl_resources/blob/main/tgt_ful_license_free.txt)
+  - [english](https://github.com/flutter-painter/awesome_fula_nl_resources/blob/main/src_eng_license_free.txt) as an alternative source (might need rework on the embedding part set-up for English)
 
 ## Future Improvements
 

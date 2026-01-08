@@ -1,0 +1,67 @@
+
+import java.util.Properties
+import java.io.FileInputStream
+
+plugins {
+    id 'com.android.application'
+    id 'kotlin-android'
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id 'dev.flutter.flutter-gradle-plugin'
+}
+
+def keystorePropertiesFile = rootProject.file('key.properties')
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+android {
+    namespace "com.malinali.app"
+    compileSdk flutter.compileSdkVersion
+    ndkVersion "27.0.12077973"
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17.toString()
+    }
+
+    defaultConfig {
+        applicationId "com.malinali.app"
+        minSdkVersion 24
+        targetSdkVersion flutter.targetSdkVersion
+        versionCode flutter.versionCode
+        versionName flutter.versionName
+    }
+
+    signingConfigs {
+        release {
+            keyAlias keystoreProperties['keyAlias']
+            keyPassword keystoreProperties['keyPassword']
+            storeFile file(keystoreProperties['storeFile'])
+            storePassword keystoreProperties['storePassword']
+        }
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled true
+        }
+        profile {
+            minifyEnabled true
+        }
+        release {
+            signingConfig signingConfigs.release
+            shrinkResources false
+            minifyEnabled true
+            // proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+flutter {
+    source '../..'
+}
