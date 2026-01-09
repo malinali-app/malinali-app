@@ -1,7 +1,6 @@
 // ignore_for_file: implementation_imports
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show compute, kDebugMode;
 import 'package:flutter/material.dart';
-import 'package:re_editor/re_editor.dart';
 import 'package:ml_algo/src/persistence/sqlite_neighbor_search_store.dart';
 import 'package:ml_algo/src/retrieval/hybrid_fts_searcher.dart';
 import 'package:ml_algo/src/retrieval/translation_result.dart';
@@ -11,7 +10,10 @@ import 'package:malinali/services/embedding_service.dart';
 import 'package:malinali/services/query_stemmer.dart';
 import 'package:malinali/setup_screen.dart';
 import 'package:malinali/services/generate_embeddings.dart';
+import 'package:malinali/services/user_input_service.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:cross_file/cross_file.dart';
 import 'dart:io';
 
 void main() async {
@@ -141,12 +143,13 @@ class TranslationScreen extends StatefulWidget {
 }
 
 class _TranslationScreenState extends State<TranslationScreen> {
-  late CodeLineEditingController _inputController;
-  late CodeLineEditingController _outputController;
+  late TextEditingController _inputController;
+  late TextEditingController _outputController;
   late FocusNode _inputFocusNode;
   HybridFTSSearcher? _searcher;
   SQLiteNeighborSearchStore? _store; // Keep reference to store to close it properly
   EmbeddingService? _embeddingService;
+  UserInputService? _userInputService;
   bool _isLoading = true;
   bool _isTranslating = false;
   String _sourceLang = 'French';
@@ -187,8 +190,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
   @override
   void initState() {
     super.initState();
-    _inputController = CodeLineEditingController();
-    _outputController = CodeLineEditingController();
+    _inputController = TextEditingController();
+    _outputController = TextEditingController();
     _inputFocusNode = FocusNode();
     
     // Track input text changes to show/hide clear button
@@ -229,9 +232,13 @@ class _TranslationScreenState extends State<TranslationScreen> {
 
       // Close previous store if it exists
       _store?.close();
+      _userInputService?.close();
       
       final store = SQLiteNeighborSearchStore(dbPath);
       _store = store; // Keep reference
+      
+      // Initialize user input service
+      _userInputService = UserInputService(dbPath);
 
       // Load existing searcher from database
       HybridFTSSearcher? searcher;
@@ -335,6 +342,35 @@ class _TranslationScreenState extends State<TranslationScreen> {
         );
         print('DEBUG: Keyword search found ${keywordResults.length} results');
 
+        // Also search user inputs
+        List<TranslationResult> userInputResults = [];
+        if (_userInputService != null) {
+          final userInputs = _userInputService!.searchUserInputs(inputText);
+          // Convert user inputs to TranslationResult format
+          // For Fula → French/English, user inputs have sourceText = Fula, targetText = French/English
+          for (var i = 0; i < userInputs.length; i++) {
+            final input = userInputs[i];
+            // Check if the user input matches the target language
+            final matchesTarget = _targetLang == 'English'
+                ? (input['sourceLang'] == 'Fula' || input['targetLang'] == 'English')
+                : (input['sourceLang'] == 'Fula' || input['targetLang'] == 'French');
+            
+            if (matchesTarget || input['sourceLang'] == null) {
+              // Create a pseudo TranslationResult for user input
+              // We'll use a special pointIndex (negative) to identify user inputs
+              userInputResults.add(
+                TranslationResult(
+                  sourceText: input['targetText'] as String, // Target language text
+                  targetText: input['sourceText'] as String, // Fula text (what user searched)
+                  distance: 0.0, // User inputs get priority (distance 0)
+                  pointIndex: -(input['id'] as int), // Negative index for user inputs
+                ),
+              );
+            }
+          }
+          print('DEBUG: User input search found ${userInputResults.length} results');
+        }
+
         // Filter results to match target language (English or French)
         // Results have: sourceText = French/English, targetText = Fula (what user searched for)
         if (_targetLang == 'English') {
@@ -366,6 +402,9 @@ class _TranslationScreenState extends State<TranslationScreen> {
           // No filtering needed if target is Fula (shouldn't happen in this branch)
           results = keywordResults;
         }
+
+        // Add user inputs at the beginning (they have priority)
+        results = [...userInputResults, ...results];
 
         // Look for exact match
         TranslationResult? exactMatch;
@@ -417,6 +456,34 @@ class _TranslationScreenState extends State<TranslationScreen> {
         print(
           'DEBUG: Keyword search (stemmed: "$stemmedQuery") found ${keywordResults.length} results',
         );
+
+        // Also search user inputs
+        List<TranslationResult> userInputResults = [];
+        if (_userInputService != null) {
+          final userInputs = _userInputService!.searchUserInputs(inputText);
+          // Convert user inputs to TranslationResult format
+          // For French/English → Fula, user inputs have sourceText = French/English, targetText = Fula
+          for (var i = 0; i < userInputs.length; i++) {
+            final input = userInputs[i];
+            // Check if the user input matches the source language
+            final matchesSource = _sourceLang == 'English'
+                ? (input['sourceLang'] == 'English' || input['sourceLang'] == null)
+                : (input['sourceLang'] == 'French' || input['sourceLang'] == null);
+            
+            if (matchesSource) {
+              // Create a pseudo TranslationResult for user input
+              userInputResults.add(
+                TranslationResult(
+                  sourceText: input['sourceText'] as String, // Source language text
+                  targetText: input['targetText'] as String, // Fula text
+                  distance: 0.0, // User inputs get priority (distance 0)
+                  pointIndex: -(input['id'] as int), // Negative index for user inputs
+                ),
+              );
+            }
+          }
+          print('DEBUG: User input search found ${userInputResults.length} results');
+        }
 
         // Filter FTS results to match source language (English or French)
         // This ensures we only get results from the correct source language
@@ -538,18 +605,19 @@ class _TranslationScreenState extends State<TranslationScreen> {
         ftsIndices = filteredKeywordResults.map((r) => r.pointIndex).toSet();
 
         // Prepare FTS results (top 3)
-        // If we have an exact match, put it first
+        // Add user inputs first (they have priority), then regular results
         if (exactKeywordMatch != null) {
           final exactMatch = exactKeywordMatch;
           ftsResults = [
+            ...userInputResults,
             exactMatch,
             ...filteredKeywordResults
                 .where((r) => r.pointIndex != exactMatch.pointIndex)
                 .take(2),
-          ].toList();
+          ].take(3).toList();
           hasExactFtsMatch = true;
         } else {
-          ftsResults = filteredKeywordResults.take(3).toList();
+          ftsResults = [...userInputResults, ...filteredKeywordResults].take(3).toList();
           hasExactFtsMatch = false;
         }
 
@@ -708,6 +776,95 @@ class _TranslationScreenState extends State<TranslationScreen> {
     }
   }
 
+
+  /// Share all user inputs
+  Future<void> _shareUserInputs() async {
+    final box = context.findRenderObject() as RenderBox?;
+    if (_userInputService == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Service non initialisé.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final count = _userInputService!.getUserInputCount();
+    if (count == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Aucune entrée utilisateur à partager.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Get all user inputs
+      final inputs = _userInputService!.getAllUserInputs();
+      
+      // Prepare source and target texts
+      final sourceTexts = <String>[];
+      final targetTexts = <String>[];
+      
+      for (final input in inputs) {
+        sourceTexts.add(input['sourceText'] as String);
+        targetTexts.add(input['targetText'] as String);
+      }
+      
+      // Create files in application documents directory (like weebi pattern)
+      final appDir = await getApplicationDocumentsDirectory();
+      final sourceFile = File('${appDir.path}${Platform.pathSeparator}source.txt');
+      final targetFile = File('${appDir.path}${Platform.pathSeparator}target.txt');
+      
+      // Write source.txt (one translation per line with "- " prefix)
+      final sourceBuffer = StringBuffer();
+      for (final sourceText in sourceTexts) {
+        sourceBuffer.writeln(sourceText);
+      }
+      final sourceF = await compute(_writeFile, _FileWriteData(sourceFile.path, sourceBuffer.toString()));
+      final sourceFX = XFile(sourceF.path);
+      
+      // Write target.txt (one translation per line with "- " prefix)
+      final targetBuffer = StringBuffer();
+      for (final targetText in targetTexts) {
+        targetBuffer.writeln(targetText);
+      }
+      final targetF = await compute(_writeFile, _FileWriteData(targetFile.path, targetBuffer.toString()));
+      final targetFX = XFile(targetF.path);
+      
+      // Share both files as XFile objects (matching weebi pattern)
+      await Share.shareXFiles(
+        [sourceFX, targetFX],
+        text: 'Mes traductions Malinali ($count entrées)',
+        subject: 'Mes traductions Malinali ($count entrées)',
+        sharePositionOrigin: box != null ? box.localToGlobal(Offset.zero) & box.size : null,
+      );
+      
+      // Clean up temporary files after a delay (to allow sharing to complete)
+      Future.delayed(const Duration(seconds: 5), () async {
+        try {
+          if (await sourceFile.exists()) await sourceFile.delete();
+          if (await targetFile.exists()) await targetFile.delete();
+        } catch (e) {
+          // Ignore cleanup errors
+          if (kDebugMode) print('Error cleaning up temp files: $e');
+        }
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors du partage: $e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
     _inputController.dispose();
@@ -715,6 +872,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
     _inputFocusNode.dispose();
     _embeddingService?.dispose();
     _store?.close(); // Close database connection
+    _userInputService?.close(); // Close user input service
     super.dispose();
   }
 
@@ -871,16 +1029,23 @@ class _TranslationScreenState extends State<TranslationScreen> {
                   Expanded(
                     child: Stack(
                       children: [
-                        CodeEditor(
+                        TextField(
                           controller: _inputController,
-                          style: const CodeEditorStyle(
+                          focusNode: _inputFocusNode,
+                          autofocus: true,
+                          maxLines: null,
+                          expands: true,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => _translate(),
+                          style: const TextStyle(
                             fontSize: 16,
-                            // Use NotoSans from assets for better Unicode support (Fula characters)
                             fontFamily: 'NotoSans',
                           ),
-                          autocompleteSymbols: false,
-                          // Use persistent focus node to avoid Android input issues
-                          focusNode: _inputFocusNode,
+                          decoration: const InputDecoration(
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.all(12.0),
+                            hintText: 'Tapez votre texte ici...',
+                          ),
                         ),
                         // Clear button - bottom right corner, only visible when there's text
                         if (_hasInputText)
@@ -891,8 +1056,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
                               color: Colors.transparent,
                               child: InkWell(
                                 onTap: () {
-                                  _inputController.text = '';
-                                  // Focus will be maintained automatically
+                                  _inputController.clear();
+                                  _inputFocusNode.requestFocus();
                                 },
                                 borderRadius: BorderRadius.circular(20),
                                 child: Container(
@@ -964,13 +1129,19 @@ class _TranslationScreenState extends State<TranslationScreen> {
                     ),
                   ),
                   Expanded(
-                    child: CodeEditor(
+                    child: TextField(
                       controller: _outputController,
                       readOnly: true,
-                      style: const CodeEditorStyle(
+                      maxLines: null,
+                      expands: true,
+                      style: const TextStyle(
                         fontSize: 16,
-                        // Use NotoSans from assets for better Unicode support (Fula characters)
                         fontFamily: 'NotoSans',
+                      ),
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.all(12.0),
+                        //hintText: 'La traduction apparaîtra ici...',
                       ),
                     ),
                   ),
@@ -1006,6 +1177,20 @@ class _TranslationScreenState extends State<TranslationScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              leading: const Icon(Icons.save),
+              title: const Text('Enregistrer une traduction'),
+              subtitle: const Text('Ajouter une entrée source/target'),
+              onTap: () => Navigator.of(context).pop('save'),
+            ),
+            if (_userInputService != null && _userInputService!.getUserInputCount() > 0)
+              ListTile(
+                leading: const Icon(Icons.share),
+                title: const Text('Partager mes traductions'),
+                subtitle: Text('${_userInputService!.getUserInputCount()} entrées'),
+                onTap: () => Navigator.of(context).pop('share'),
+              ),
+            const Divider(),
+            ListTile(
               leading: const Icon(Icons.storage),
               title: const Text('Sélectionner une base de données SQLite'),
               onTap: () => Navigator.of(context).pop('database'),
@@ -1022,35 +1207,196 @@ class _TranslationScreenState extends State<TranslationScreen> {
 
     if (option == null) return;
 
-    // Show warning dialog
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Attention'),
-        content: const Text(
-          'Toutes les données actuelles seront perdues. '
-          'Voulez-vous continuer ?',
+    if (option == 'save') {
+      await _showSaveTranslationDialog();
+    } else if (option == 'share') {
+      await _shareUserInputs();
+    } else if (option == 'database' || option == 'files') {
+      // Show warning dialog for database/file operations
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Attention'),
+          content: const Text(
+            'Toutes les données actuelles seront perdues. '
+            'Voulez-vous continuer ?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Annuler'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Continuer'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Annuler'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Continuer'),
-          ),
-        ],
+      );
+
+      if (confirmed != true) return;
+
+      if (option == 'database') {
+        await _selectDatabase();
+      } else if (option == 'files') {
+        await _selectTextFiles();
+      }
+    }
+  }
+
+  /// Show dialog to save a translation (with form for source and target text)
+  Future<void> _showSaveTranslationDialog() async {
+    final sourceController = TextEditingController();
+    final targetController = TextEditingController();
+    bool sourceHasText = false;
+    bool targetHasText = false;
+
+    // Listen to text changes
+    void updateButtonState() {
+      final newSourceHasText = sourceController.text.trim().isNotEmpty;
+      final newTargetHasText = targetController.text.trim().isNotEmpty;
+      if (newSourceHasText != sourceHasText || newTargetHasText != targetHasText) {
+        sourceHasText = newSourceHasText;
+        targetHasText = newTargetHasText;
+        // Force rebuild of dialog
+        // Note: This is a simplified approach - in production you might want to use StatefulBuilder
+      }
+    }
+
+    sourceController.addListener(updateButtonState);
+    targetController.addListener(updateButtonState);
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          // Update state when text changes
+          sourceController.addListener(() {
+            setState(() {});
+          });
+          targetController.addListener(() {
+            setState(() {});
+          });
+
+          final canSave = sourceController.text.trim().isNotEmpty &&
+              targetController.text.trim().isNotEmpty;
+
+          return AlertDialog(
+            title: const Text('Enregistrer une traduction'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Source (${_getDisplayName(_sourceLang)})',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: sourceController,
+                    autofocus: true,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      hintText: 'Texte source...',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Cible (${_getDisplayName(_targetLang)})',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: targetController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      hintText: 'Texte cible...',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Annuler'),
+              ),
+              ElevatedButton(
+                onPressed: canSave
+                    ? () => Navigator.of(context).pop(true)
+                    : null,
+                child: const Text('Enregistrer'),
+              ),
+            ],
+          );
+        },
       ),
     );
 
-    if (confirmed != true) return;
+    sourceController.removeListener(updateButtonState);
+    targetController.removeListener(updateButtonState);
 
-    if (option == 'database') {
-      await _selectDatabase();
-    } else if (option == 'files') {
-      await _selectTextFiles();
+    if (result == true) {
+      final sourceText = sourceController.text.trim();
+      final targetText = targetController.text.trim();
+
+      if (sourceText.isEmpty || targetText.isEmpty) {
+        return;
+      }
+
+      if (_userInputService == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Service non initialisé.'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+
+      try {
+        await _userInputService!.addUserInput(
+          sourceText: sourceText,
+          targetText: targetText,
+          sourceLang: _sourceLang,
+          targetLang: _targetLang,
+        );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Traduction enregistrée (${_userInputService!.getUserInputCount()} entrées au total)',
+              ),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erreur lors de l\'enregistrement: $e'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
     }
+
+    sourceController.dispose();
+    targetController.dispose();
   }
 
   Future<void> _selectDatabase() async {
@@ -1303,4 +1649,19 @@ class _ScoredResult {
     required this.inFts,
     required this.lengthPenalty,
   });
+}
+
+/// Helper class for file writing with compute
+class _FileWriteData {
+  final String path;
+  final String content;
+
+  _FileWriteData(this.path, this.content);
+}
+
+/// Helper function for writing files using compute (matching weebi pattern)
+Future<File> _writeFile(_FileWriteData data) async {
+  final file = File(data.path);
+  await file.writeAsString(data.content);
+  return file;
 }
