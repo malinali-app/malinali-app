@@ -54,7 +54,6 @@ class InitialScreen extends StatefulWidget {
 
 class _InitialScreenState extends State<InitialScreen> {
   bool _isChecking = true;
-  bool _hasDatabase = false;
 
   @override
   void initState() {
@@ -80,7 +79,6 @@ class _InitialScreenState extends State<InitialScreen> {
 
       if (mounted) {
         setState(() {
-          _hasDatabase = exists;
           _isChecking = false;
         });
 

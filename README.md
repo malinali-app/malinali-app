@@ -37,7 +37,8 @@ This approach is **imperfect but pragmatic**:
 
 - **Works offline**: All data stored locally, no API calls
 - **Mobile-friendly**: Flutter app, runs smoothly on low-end devices
-- **Extensible**: The app lets users add their own translations and share them
+- **User contributions**: Users can add their own translations (stored in SQLite with full-text search support)
+- **Share translations**: Export and share user-added translations as text files (source.txt and target.txt)
 
 **When to use Malinali:**
 
