@@ -23,3 +23,7 @@
 
 # Keep fonnx plugin classes
 -keep class com.telosnex.fonnx.** { *; }
+
+# Keep JNA classes (used by Vosk)
+-keep class com.sun.jna.* { *; }
+-keepclassmembers class * extends com.sun.jna.* { public *; }

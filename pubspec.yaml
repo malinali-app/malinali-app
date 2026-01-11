@@ -30,6 +30,8 @@ dependencies:
       url: https://github.com/malinali-app/ml_algo
       ref: add70b8212cb1ffd70138742a1c215235304e9e5
 
+  vosk_flutter: ^0.3.48
+  permission_handler: ^10.4.5
   ml_linalg: ^13.11.15
   ml_dataframe: ^1.6.0
   stemmer: any #^3.2.0
@@ -67,6 +69,7 @@ flutter:
     - assets/models/tokenizer.json
     - assets/malinali_logo.jpg
     - assets/malinali.db.zip
+    - assets/vosk-model-small-fr-0.22.zip
 
   fonts:
     - family: NotoSans

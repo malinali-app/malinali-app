@@ -52,7 +52,7 @@ Future<void> main() async {
     // Try production database path (real app directory, not mocked)
     final homeDir = Platform.environment['HOME'] ?? '';
     final possiblePaths = [
-      '$homeDir/Library/Containers/com.mlalgo.malinali/Data/Documents/malinali.db',
+      '$homeDir/Library/Containers/com.malinali.malinali/Data/Documents/malinali.db',
       '$homeDir/Library/Application Support/malinali/malinali.db',
     ];
 

@@ -11,6 +11,7 @@ import 'package:malinali/services/query_stemmer.dart';
 import 'package:malinali/setup_screen.dart';
 import 'package:malinali/services/generate_embeddings.dart';
 import 'package:malinali/services/user_input_service.dart';
+import 'package:malinali/services/speech_recognition_service.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:cross_file/cross_file.dart';
@@ -148,8 +149,10 @@ class _TranslationScreenState extends State<TranslationScreen> {
   SQLiteNeighborSearchStore? _store; // Keep reference to store to close it properly
   EmbeddingService? _embeddingService;
   UserInputService? _userInputService;
+  SpeechRecognitionService? _speechService;
   bool _isLoading = true;
   bool _isTranslating = false;
+  bool _isListening = false; // Track if speech recognition is active
   String _sourceLang = 'French';
   String _targetLang = 'Fula'; // Default: French → Fula
   String? _error;
@@ -207,6 +210,93 @@ class _TranslationScreenState extends State<TranslationScreen> {
     });
     
     _initializeSearcher();
+    
+    if(Platform.isAndroid) {
+      _initializeSpeechRecognition();
+    }
+  }
+
+  Future<void> _initializeSpeechRecognition() async {
+    try {
+      _speechService = SpeechRecognitionService();
+      
+      // Set up callbacks
+      _speechService!.onResult = (text) {
+        if (mounted) {
+          setState(() {
+            _inputController.text = text;
+            _isListening = false;
+          });
+          // Auto-translate after speech recognition
+          _translate();
+        }
+      };
+      
+      _speechService!.onPartialResult = (text) {
+        if (mounted) {
+          setState(() {
+            _inputController.text = text;
+          });
+        }
+      };
+      
+      _speechService!.onError = () {
+        if (mounted) {
+          setState(() {
+            _isListening = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Erreur lors de la reconnaissance vocale'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      };
+    } catch (e) {
+      print('Error initializing speech recognition: $e');
+    }
+  }
+
+  Future<void> _toggleListening() async {
+    if (_speechService == null) {
+      await _initializeSpeechRecognition();
+    }
+
+    if (_isListening) {
+      // Stop listening
+      await _speechService!.stopListening();
+      setState(() {
+        _isListening = false;
+      });
+    } else {
+      // Only allow speech recognition when source language is French
+      if (_sourceLang != 'French') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('La reconnaissance vocale est disponible uniquement pour le français'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      // Start listening
+      try {
+        await _speechService!.startListening();
+        setState(() {
+          _isListening = true;
+        });
+      } catch (e) {
+        print('Error starting speech recognition: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _initializeSearcher() async {
@@ -871,6 +961,9 @@ class _TranslationScreenState extends State<TranslationScreen> {
     _embeddingService?.dispose();
     _store?.close(); // Close database connection
     _userInputService?.close(); // Close user input service
+    if(Platform.isAndroid) {
+      _speechService?.dispose(); // Dispose speech recognition service
+    }
     super.dispose();
   }
 
@@ -994,12 +1087,23 @@ class _TranslationScreenState extends State<TranslationScreen> {
     } else {
       bodyContent = Column(
         children: [
-          // Language direction switcher at the top
+          // Language direction switcher at the top with settings button
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-            child: _LanguageDirectionSwitcher(
-              direction: _direction,
-              onToggle: _toggleDirection,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _LanguageDirectionSwitcher(
+                    direction: _direction,
+                    onToggle: _toggleDirection,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.settings),
+                  onPressed: _showSettingsDialog,
+                  tooltip: 'Paramètres',
+                ),
+              ],
             ),
           ),
           // Input editor (20% of space)
@@ -1045,10 +1149,44 @@ class _TranslationScreenState extends State<TranslationScreen> {
                             hintText: 'Tapez votre texte ici...',
                           ),
                         ),
-                        // Clear button - bottom right corner, only visible when there's text
-                        if (_hasInputText)
+                        // Mic button - bottom right corner, only visible when source is French
+                        if (_sourceLang == 'French' && Platform.isAndroid)
                           Positioned(
                             bottom: 8,
+                            right: 8,
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: _isTranslating ? null : _toggleListening,
+                                borderRadius: BorderRadius.circular(24),
+                                child: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: _isListening 
+                                        ? Colors.red.shade100.withOpacity(0.9)
+                                        : Colors.blue.shade100.withOpacity(0.9),
+                                    borderRadius: BorderRadius.circular(24),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.1),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Icon(
+                                    _isListening ? Icons.mic : Icons.mic_none,
+                                    size: 24,
+                                    color: _isListening ? Colors.red : Colors.blue,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        // Clear button - bottom right, above mic button when mic is visible, otherwise bottom right
+                        if (_hasInputText)
+                          Positioned(
+                            bottom: _sourceLang == 'French' && Platform.isAndroid ? 50 : 8,
                             right: 8,
                             child: Material(
                               color: Colors.transparent,
@@ -1152,16 +1290,6 @@ class _TranslationScreenState extends State<TranslationScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Malinali'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: _showSettingsDialog,
-            tooltip: 'Paramètres',
-          ),
-        ],
-      ),
       body: SafeArea(child: bodyContent),
     );
   }
@@ -1615,7 +1743,6 @@ class _LanguageDirectionSwitcher extends StatelessWidget {
         onTap: onToggle,
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
           decoration: BoxDecoration(
             border: Border.all(color: Colors.grey.shade300),
