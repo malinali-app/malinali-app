@@ -29,8 +29,8 @@ class _SetupScreenState extends State<SetupScreen> {
   Future<void> _selectDatabase() async {
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['db', 'sqlite'],
+        type: FileType.any
+        // allowedExtensions: ['db', 'sqlite'],
       );
 
       if (result != null && result.files.single.path != null) {

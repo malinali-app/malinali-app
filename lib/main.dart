@@ -19,10 +19,10 @@ import 'dart:io';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // SQLite3 is automatically initialized by sqlite3_flutter_libs plugin on Android
   // The plugin handles loading the native library automatically
-  
+
   runApp(const MalinaliApp());
 }
 
@@ -68,7 +68,7 @@ class _InitialScreenState extends State<InitialScreen> {
       final dbPath = '${appDir.path}/malinali.db';
       final dbFile = File(dbPath);
       final exists = await dbFile.exists();
-      
+
       // Debug logging
       print('🔍 Checking database at: $dbPath');
       print('   Database exists: $exists');
@@ -87,14 +87,18 @@ class _InitialScreenState extends State<InitialScreen> {
         if (exists) {
           final stat = await dbFile.stat();
           if (stat.size > 0) {
-            print('✅ Database found and valid, navigating to TranslationScreen');
+            print(
+              '✅ Database found and valid, navigating to TranslationScreen',
+            );
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
                 builder: (context) => const TranslationScreen(),
               ),
             );
           } else {
-            print('⚠️  Database file exists but is empty, showing setup screen');
+            print(
+              '⚠️  Database file exists but is empty, showing setup screen',
+            );
           }
         } else {
           print('ℹ️  Database not found, showing setup screen');
@@ -114,9 +118,7 @@ class _InitialScreenState extends State<InitialScreen> {
     // Navigate to translation screen when setup is complete
     if (mounted) {
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => const TranslationScreen(),
-        ),
+        MaterialPageRoute(builder: (context) => const TranslationScreen()),
       );
     }
   }
@@ -124,9 +126,7 @@ class _InitialScreenState extends State<InitialScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isChecking) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     // Show setup screen if database doesn't exist
@@ -146,7 +146,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
   late TextEditingController _outputController;
   late FocusNode _inputFocusNode;
   HybridFTSSearcher? _searcher;
-  SQLiteNeighborSearchStore? _store; // Keep reference to store to close it properly
+  SQLiteNeighborSearchStore?
+  _store; // Keep reference to store to close it properly
   EmbeddingService? _embeddingService;
   UserInputService? _userInputService;
   SpeechRecognitionService? _speechService;
@@ -157,7 +158,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
   String _targetLang = 'Fula'; // Default: French → Fula
   String? _error;
   TranslationDirection _direction = TranslationDirection.frenchToFula;
-  bool _hasInputText = false; // Track if input has text for clear button visibility
+  bool _hasInputText =
+      false; // Track if input has text for clear button visibility
   String? _statusMessage; // Status message for detailed loader
   int _progressCurrent = 0;
   int _progressTotal = 0;
@@ -194,7 +196,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
     _inputController = TextEditingController();
     _outputController = TextEditingController();
     _inputFocusNode = FocusNode();
-    
+
     // Track input text changes to show/hide clear button
     _inputController.addListener(() {
       final hasText = _inputController.text.trim().isNotEmpty;
@@ -208,10 +210,11 @@ class _TranslationScreenState extends State<TranslationScreen> {
         print('Input text changed: "${_inputController.text}"');
       }
     });
-    
+
     _initializeSearcher();
-    
-    if(Platform.isAndroid) {
+
+//  Error starting speech recognition: Exception: Speech recognition is only supported on Android. For other platforms, use the record package.
+    if (Platform.isAndroid) {
       _initializeSpeechRecognition();
     }
   }
@@ -219,7 +222,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
   Future<void> _initializeSpeechRecognition() async {
     try {
       _speechService = SpeechRecognitionService();
-      
+
       // Set up callbacks
       _speechService!.onResult = (text) {
         if (mounted) {
@@ -231,7 +234,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
           _translate();
         }
       };
-      
+
       _speechService!.onPartialResult = (text) {
         if (mounted) {
           setState(() {
@@ -239,7 +242,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
           });
         }
       };
-      
+
       _speechService!.onError = () {
         if (mounted) {
           setState(() {
@@ -274,7 +277,9 @@ class _TranslationScreenState extends State<TranslationScreen> {
       if (_sourceLang != 'French') {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('La reconnaissance vocale est disponible uniquement pour le français'),
+            content: Text(
+              'La reconnaissance vocale est disponible uniquement pour le français',
+            ),
             duration: Duration(seconds: 2),
           ),
         );
@@ -321,10 +326,10 @@ class _TranslationScreenState extends State<TranslationScreen> {
       // Close previous store if it exists
       _store?.close();
       _userInputService?.close();
-      
+
       final store = SQLiteNeighborSearchStore(dbPath);
       _store = store; // Keep reference
-      
+
       // Initialize user input service
       _userInputService = UserInputService(dbPath);
 
@@ -336,10 +341,11 @@ class _TranslationScreenState extends State<TranslationScreen> {
       } catch (e) {
         final errorMessage = e.toString();
         // Check if this is a "searcher not found" error
-        if (errorMessage.contains('not found') || 
+        if (errorMessage.contains('not found') ||
             errorMessage.contains('Searcher with ID')) {
           setState(() {
-            _error = 'Searcher with ID "fula" not found in database.\n\n'
+            _error =
+                'Searcher with ID "fula" not found in database.\n\n'
                 'This usually happens when:\n'
                 '1. The database was created with a different model version\n'
                 '2. The database needs to be regenerated\n\n'
@@ -360,7 +366,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
         _searcher = searcher;
         _embeddingService = embeddingService;
         _isLoading = false;
-        _statusMessage = null; // Clear status message after successful initialization
+        _statusMessage =
+            null; // Clear status message after successful initialization
         _progressCurrent = 0;
         _progressTotal = 0;
       });
@@ -439,53 +446,64 @@ class _TranslationScreenState extends State<TranslationScreen> {
           for (var i = 0; i < userInputs.length; i++) {
             final input = userInputs[i];
             // Check if the user input matches the target language
-            final matchesTarget = _targetLang == 'English'
-                ? (input['sourceLang'] == 'Fula' || input['targetLang'] == 'English')
-                : (input['sourceLang'] == 'Fula' || input['targetLang'] == 'French');
-            
+            final matchesTarget =
+                _targetLang == 'English'
+                    ? (input['sourceLang'] == 'Fula' ||
+                        input['targetLang'] == 'English')
+                    : (input['sourceLang'] == 'Fula' ||
+                        input['targetLang'] == 'French');
+
             if (matchesTarget || input['sourceLang'] == null) {
               // Create a pseudo TranslationResult for user input
               // We'll use a special pointIndex (negative) to identify user inputs
               userInputResults.add(
                 TranslationResult(
-                  sourceText: input['targetText'] as String, // Target language text
-                  targetText: input['sourceText'] as String, // Fula text (what user searched)
+                  sourceText:
+                      input['targetText'] as String, // Target language text
+                  targetText:
+                      input['sourceText']
+                          as String, // Fula text (what user searched)
                   distance: 0.0, // User inputs get priority (distance 0)
-                  pointIndex: -(input['id'] as int), // Negative index for user inputs
+                  pointIndex:
+                      -(input['id'] as int), // Negative index for user inputs
                 ),
               );
             }
           }
-          print('DEBUG: User input search found ${userInputResults.length} results');
+          print(
+            'DEBUG: User input search found ${userInputResults.length} results',
+          );
         }
 
         // Filter results to match target language (English or French)
         // Results have: sourceText = French/English, targetText = Fula (what user searched for)
         if (_targetLang == 'English') {
           // Filter to show only English results (heuristic: no French characters)
-          results = keywordResults.where((r) {
-            final text = r.sourceText.toLowerCase();
-            return !text.contains('é') &&
-                !text.contains('è') &&
-                !text.contains('ê') &&
-                !text.contains('à') &&
-                !text.contains('ç') &&
-                !text.contains('ù');
-          }).toList();
+          results =
+              keywordResults.where((r) {
+                final text = r.sourceText.toLowerCase();
+                return !text.contains('é') &&
+                    !text.contains('è') &&
+                    !text.contains('ê') &&
+                    !text.contains('à') &&
+                    !text.contains('ç') &&
+                    !text.contains('ù');
+              }).toList();
         } else if (_targetLang == 'French') {
           // Filter to show only French results (heuristic: has French characters or common French words)
-          results = keywordResults.where((r) {
-            final text = r.sourceText.toLowerCase();
-            return text.contains('é') ||
-                text.contains('è') ||
-                text.contains('ê') ||
-                text.contains('à') ||
-                text.contains('ç') ||
-                text.contains('ù') ||
-                text.contains(' le ') ||
-                text.contains(' la ') ||
-                text.contains(' de ');
-          }).toList();
+          results =
+              keywordResults.where((r) {
+                final text = r.sourceText.toLowerCase();
+                return text.contains('é') ||
+                    text.contains('è') ||
+                    text.contains('ê') ||
+                    text.contains('à') ||
+                    text.contains('ç') ||
+                    text.contains('ù') ||
+                    text.contains(' le ') ||
+                    text.contains(' la ') ||
+                    text.contains(' de ');
+              }).toList();
         } else {
           // No filtering needed if target is Fula (shouldn't happen in this branch)
           results = keywordResults;
@@ -522,9 +540,10 @@ class _TranslationScreenState extends State<TranslationScreen> {
         // Choose stemming strategy based on the current source language.
         // - English: use Porter/Snowball stemming
         // - French: conservative normalization (no aggressive stemming)
-        final queryLanguage = _sourceLang == 'English'
-            ? QueryLanguage.english
-            : QueryLanguage.french;
+        final queryLanguage =
+            _sourceLang == 'English'
+                ? QueryLanguage.english
+                : QueryLanguage.french;
         final stemmedQuery = QueryStemmer.stemQuery(inputText, queryLanguage);
 
         // Always run both:
@@ -554,23 +573,30 @@ class _TranslationScreenState extends State<TranslationScreen> {
           for (var i = 0; i < userInputs.length; i++) {
             final input = userInputs[i];
             // Check if the user input matches the source language
-            final matchesSource = _sourceLang == 'English'
-                ? (input['sourceLang'] == 'English' || input['sourceLang'] == null)
-                : (input['sourceLang'] == 'French' || input['sourceLang'] == null);
-            
+            final matchesSource =
+                _sourceLang == 'English'
+                    ? (input['sourceLang'] == 'English' ||
+                        input['sourceLang'] == null)
+                    : (input['sourceLang'] == 'French' ||
+                        input['sourceLang'] == null);
+
             if (matchesSource) {
               // Create a pseudo TranslationResult for user input
               userInputResults.add(
                 TranslationResult(
-                  sourceText: input['sourceText'] as String, // Source language text
+                  sourceText:
+                      input['sourceText'] as String, // Source language text
                   targetText: input['targetText'] as String, // Fula text
                   distance: 0.0, // User inputs get priority (distance 0)
-                  pointIndex: -(input['id'] as int), // Negative index for user inputs
+                  pointIndex:
+                      -(input['id'] as int), // Negative index for user inputs
                 ),
               );
             }
           }
-          print('DEBUG: User input search found ${userInputResults.length} results');
+          print(
+            'DEBUG: User input search found ${userInputResults.length} results',
+          );
         }
 
         // Filter FTS results to match source language (English or French)
@@ -578,29 +604,31 @@ class _TranslationScreenState extends State<TranslationScreen> {
         List<TranslationResult> filteredKeywordResults = keywordResults;
         if (_sourceLang == 'English') {
           // Filter to show only English results (heuristic: no French characters)
-          filteredKeywordResults = keywordResults.where((r) {
-            final text = r.sourceText.toLowerCase();
-            return !text.contains('é') &&
-                !text.contains('è') &&
-                !text.contains('ê') &&
-                !text.contains('à') &&
-                !text.contains('ç') &&
-                !text.contains('ù');
-          }).toList();
+          filteredKeywordResults =
+              keywordResults.where((r) {
+                final text = r.sourceText.toLowerCase();
+                return !text.contains('é') &&
+                    !text.contains('è') &&
+                    !text.contains('ê') &&
+                    !text.contains('à') &&
+                    !text.contains('ç') &&
+                    !text.contains('ù');
+              }).toList();
         } else if (_sourceLang == 'French') {
           // Filter to show only French results (heuristic: has French characters or common French words)
-          filteredKeywordResults = keywordResults.where((r) {
-            final text = r.sourceText.toLowerCase();
-            return text.contains('é') ||
-                text.contains('è') ||
-                text.contains('ê') ||
-                text.contains('à') ||
-                text.contains('ç') ||
-                text.contains('ù') ||
-                text.contains(' le ') ||
-                text.contains(' la ') ||
-                text.contains(' de ');
-          }).toList();
+          filteredKeywordResults =
+              keywordResults.where((r) {
+                final text = r.sourceText.toLowerCase();
+                return text.contains('é') ||
+                    text.contains('è') ||
+                    text.contains('ê') ||
+                    text.contains('à') ||
+                    text.contains('ç') ||
+                    text.contains('ù') ||
+                    text.contains(' le ') ||
+                    text.contains(' la ') ||
+                    text.contains(' de ');
+              }).toList();
         }
         print(
           'DEBUG: After source language filtering: ${filteredKeywordResults.length} FTS results (from ${keywordResults.length})',
@@ -646,43 +674,45 @@ class _TranslationScreenState extends State<TranslationScreen> {
         if (_sourceLang == 'English') {
           // Filter to show only English results (heuristic: no French characters)
           // More lenient: only exclude if it clearly has French characters
-          filteredSemanticResults = semanticResults.where((r) {
-            final text = r.sourceText.toLowerCase();
-            // Exclude if it has French-specific characters
-            final hasFrenchChars =
-                text.contains('é') ||
-                text.contains('è') ||
-                text.contains('ê') ||
-                text.contains('à') ||
-                text.contains('ç') ||
-                text.contains('ù') ||
-                text.contains('ô') ||
-                text.contains('î') ||
-                text.contains('û');
-            return !hasFrenchChars;
-          }).toList();
+          filteredSemanticResults =
+              semanticResults.where((r) {
+                final text = r.sourceText.toLowerCase();
+                // Exclude if it has French-specific characters
+                final hasFrenchChars =
+                    text.contains('é') ||
+                    text.contains('è') ||
+                    text.contains('ê') ||
+                    text.contains('à') ||
+                    text.contains('ç') ||
+                    text.contains('ù') ||
+                    text.contains('ô') ||
+                    text.contains('î') ||
+                    text.contains('û');
+                return !hasFrenchChars;
+              }).toList();
         } else if (_sourceLang == 'French') {
           // Filter to show only French results (heuristic: has French characters or common French words)
           // More lenient: check for French words with or without spaces, and French characters
-          filteredSemanticResults = semanticResults.where((r) {
-            final text = r.sourceText.toLowerCase();
-            // Check for French characters
-            final hasFrenchChars =
-                text.contains('é') ||
-                text.contains('è') ||
-                text.contains('ê') ||
-                text.contains('à') ||
-                text.contains('ç') ||
-                text.contains('ù') ||
-                text.contains('ô') ||
-                text.contains('î') ||
-                text.contains('û');
-            // Check for common French words (with or without spaces, at word boundaries)
-            final hasFrenchWords = RegExp(
-              r'\b(le|la|de|du|des|les|un|une|et|ou|est|sont|dans|pour|avec|sur|par|que|qui|quoi|comment|où|quand|pourquoi)\b',
-            ).hasMatch(text);
-            return hasFrenchChars || hasFrenchWords;
-          }).toList();
+          filteredSemanticResults =
+              semanticResults.where((r) {
+                final text = r.sourceText.toLowerCase();
+                // Check for French characters
+                final hasFrenchChars =
+                    text.contains('é') ||
+                    text.contains('è') ||
+                    text.contains('ê') ||
+                    text.contains('à') ||
+                    text.contains('ç') ||
+                    text.contains('ù') ||
+                    text.contains('ô') ||
+                    text.contains('î') ||
+                    text.contains('û');
+                // Check for common French words (with or without spaces, at word boundaries)
+                final hasFrenchWords = RegExp(
+                  r'\b(le|la|de|du|des|les|un|une|et|ou|est|sont|dans|pour|avec|sur|par|que|qui|quoi|comment|où|quand|pourquoi)\b',
+                ).hasMatch(text);
+                return hasFrenchChars || hasFrenchWords;
+              }).toList();
         }
         print(
           'DEBUG: After source language filtering: ${filteredSemanticResults.length} semantic results (from ${semanticResults.length})',
@@ -696,16 +726,18 @@ class _TranslationScreenState extends State<TranslationScreen> {
         // Add user inputs first (they have priority), then regular results
         if (exactKeywordMatch != null) {
           final exactMatch = exactKeywordMatch;
-          ftsResults = [
-            ...userInputResults,
-            exactMatch,
-            ...filteredKeywordResults
-                .where((r) => r.pointIndex != exactMatch.pointIndex)
-                .take(2),
-          ].take(3).toList();
+          ftsResults =
+              [
+                ...userInputResults,
+                exactMatch,
+                ...filteredKeywordResults
+                    .where((r) => r.pointIndex != exactMatch.pointIndex)
+                    .take(2),
+              ].take(3).toList();
           hasExactFtsMatch = true;
         } else {
-          ftsResults = [...userInputResults, ...filteredKeywordResults].take(3).toList();
+          ftsResults =
+              [...userInputResults, ...filteredKeywordResults].take(3).toList();
           hasExactFtsMatch = false;
         }
 
@@ -713,10 +745,11 @@ class _TranslationScreenState extends State<TranslationScreen> {
         semanticResultsFinal = [];
         if (filteredSemanticResults.isNotEmpty) {
           // Compute input length (in tokens)
-          final inputTokens = inputText
-              .split(RegExp(r'\s+'))
-              .where((w) => w.trim().isNotEmpty)
-              .toList();
+          final inputTokens =
+              inputText
+                  .split(RegExp(r'\s+'))
+                  .where((w) => w.trim().isNotEmpty)
+                  .toList();
           final inputLen = inputTokens.length;
 
           const alpha = 0.3; // strength of length penalty
@@ -729,10 +762,11 @@ class _TranslationScreenState extends State<TranslationScreen> {
 
             // Length of target text (Fula output)
             final targetText = r.targetText;
-            final outputTokens = targetText
-                .split(RegExp(r'\s+'))
-                .where((w) => w.trim().isNotEmpty)
-                .toList();
+            final outputTokens =
+                targetText
+                    .split(RegExp(r'\s+'))
+                    .where((w) => w.trim().isNotEmpty)
+                    .toList();
             final outputLen = outputTokens.length;
 
             final lenDiffRatio = (outputLen - inputLen).abs() / (inputLen + 1);
@@ -864,7 +898,6 @@ class _TranslationScreenState extends State<TranslationScreen> {
     }
   }
 
-
   /// Share all user inputs
   Future<void> _shareUserInputs() async {
     final box = context.findRenderObject() as RenderBox?;
@@ -892,45 +925,56 @@ class _TranslationScreenState extends State<TranslationScreen> {
     try {
       // Get all user inputs
       final inputs = _userInputService!.getAllUserInputs();
-      
+
       // Prepare source and target texts
       final sourceTexts = <String>[];
       final targetTexts = <String>[];
-      
+
       for (final input in inputs) {
         sourceTexts.add(input['sourceText'] as String);
         targetTexts.add(input['targetText'] as String);
       }
-      
+
       // Create files in application documents directory (like weebi pattern)
       final appDir = await getApplicationDocumentsDirectory();
-      final sourceFile = File('${appDir.path}${Platform.pathSeparator}source.txt');
-      final targetFile = File('${appDir.path}${Platform.pathSeparator}target.txt');
-      
+      final sourceFile = File(
+        '${appDir.path}${Platform.pathSeparator}source.txt',
+      );
+      final targetFile = File(
+        '${appDir.path}${Platform.pathSeparator}target.txt',
+      );
+
       // Write source.txt (one translation per line with "- " prefix)
       final sourceBuffer = StringBuffer();
       for (final sourceText in sourceTexts) {
         sourceBuffer.writeln(sourceText);
       }
-      final sourceF = await compute(_writeFile, _FileWriteData(sourceFile.path, sourceBuffer.toString()));
+      final sourceF = await compute(
+        _writeFile,
+        _FileWriteData(sourceFile.path, sourceBuffer.toString()),
+      );
       final sourceFX = XFile(sourceF.path);
-      
+
       // Write target.txt (one translation per line with "- " prefix)
       final targetBuffer = StringBuffer();
       for (final targetText in targetTexts) {
         targetBuffer.writeln(targetText);
       }
-      final targetF = await compute(_writeFile, _FileWriteData(targetFile.path, targetBuffer.toString()));
+      final targetF = await compute(
+        _writeFile,
+        _FileWriteData(targetFile.path, targetBuffer.toString()),
+      );
       final targetFX = XFile(targetF.path);
-      
+
       // Share both files as XFile objects (matching weebi pattern)
       await Share.shareXFiles(
         [sourceFX, targetFX],
         text: 'Mes traductions Malinali ($count entrées)',
         subject: 'Mes traductions Malinali ($count entrées)',
-        sharePositionOrigin: box != null ? box.localToGlobal(Offset.zero) & box.size : null,
+        sharePositionOrigin:
+            box != null ? box.localToGlobal(Offset.zero) & box.size : null,
       );
-      
+
       // Clean up temporary files after a delay (to allow sharing to complete)
       Future.delayed(const Duration(seconds: 5), () async {
         try {
@@ -961,7 +1005,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
     _embeddingService?.dispose();
     _store?.close(); // Close database connection
     _userInputService?.close(); // Close user input service
-    if(Platform.isAndroid) {
+    if (Platform.isAndroid) {
       _speechService?.dispose(); // Dispose speech recognition service
     }
     super.dispose();
@@ -980,13 +1024,11 @@ class _TranslationScreenState extends State<TranslationScreen> {
     } catch (e) {
       print('Warning: Could not delete database: $e');
     }
-    
+
     // Navigate back to initial screen (which will show setup)
     if (mounted) {
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => const InitialScreen(),
-        ),
+        MaterialPageRoute(builder: (context) => const InitialScreen()),
       );
     }
   }
@@ -1049,18 +1091,14 @@ class _TranslationScreenState extends State<TranslationScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
-                Icons.error_outline,
-                size: 64,
-                color: Colors.red,
-              ),
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
               const SizedBox(height: 24),
               Text(
                 'Error',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.red,
-                    ),
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
               ),
               const SizedBox(height: 16),
               Text(
@@ -1162,9 +1200,14 @@ class _TranslationScreenState extends State<TranslationScreen> {
                                 child: Container(
                                   padding: const EdgeInsets.all(10),
                                   decoration: BoxDecoration(
-                                    color: _isListening 
-                                        ? Colors.red.shade100.withOpacity(0.9)
-                                        : Colors.blue.shade100.withOpacity(0.9),
+                                    color:
+                                        _isListening
+                                            ? Colors.red.shade100.withOpacity(
+                                              0.9,
+                                            )
+                                            : Colors.blue.shade100.withOpacity(
+                                              0.9,
+                                            ),
                                     borderRadius: BorderRadius.circular(24),
                                     boxShadow: [
                                       BoxShadow(
@@ -1177,7 +1220,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
                                   child: Icon(
                                     _isListening ? Icons.mic : Icons.mic_none,
                                     size: 24,
-                                    color: _isListening ? Colors.red : Colors.blue,
+                                    color:
+                                        _isListening ? Colors.red : Colors.blue,
                                   ),
                                 ),
                               ),
@@ -1186,8 +1230,11 @@ class _TranslationScreenState extends State<TranslationScreen> {
                         // Clear button - bottom right, above mic button when mic is visible, otherwise bottom right
                         if (_hasInputText)
                           Positioned(
-                            bottom: _sourceLang == 'French' && Platform.isAndroid ? 50 : 8,
-                            right: 8,
+                            bottom:
+                                _sourceLang == 'French' && Platform.isAndroid
+                                    ? 18
+                                    : 8,
+                            right: 105,
                             child: Material(
                               color: Colors.transparent,
                               child: InkWell(
@@ -1199,7 +1246,9 @@ class _TranslationScreenState extends State<TranslationScreen> {
                                 child: Container(
                                   padding: const EdgeInsets.all(6),
                                   decoration: BoxDecoration(
-                                    color: Colors.grey.shade200.withOpacity(0.9),
+                                    color: Colors.grey.shade200.withOpacity(
+                                      0.9,
+                                    ),
                                     borderRadius: BorderRadius.circular(20),
                                   ),
                                   child: Icon(
@@ -1226,13 +1275,14 @@ class _TranslationScreenState extends State<TranslationScreen> {
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: _isTranslating ? null : _translate,
-                icon: _isTranslating
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.play_arrow),
+                icon:
+                    _isTranslating
+                        ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Icon(Icons.play_arrow),
                 label: const Text('Traduire'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16.0),
@@ -1289,46 +1339,48 @@ class _TranslationScreenState extends State<TranslationScreen> {
       );
     }
 
-    return Scaffold(
-      body: SafeArea(child: bodyContent),
-    );
+    return Scaffold(body: SafeArea(child: bodyContent));
   }
 
   Future<void> _showSettingsDialog() async {
     final option = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Paramètres'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.save),
-              title: const Text('Enregistrer une traduction'),
-              subtitle: const Text('Ajouter une entrée source/target'),
-              onTap: () => Navigator.of(context).pop('save'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Paramètres'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.save),
+                  title: const Text('Enregistrer une traduction'),
+                  subtitle: const Text('Ajouter une entrée source/target'),
+                  onTap: () => Navigator.of(context).pop('save'),
+                ),
+                if (_userInputService != null &&
+                    _userInputService!.getUserInputCount() > 0)
+                  ListTile(
+                    leading: const Icon(Icons.share),
+                    title: const Text('Partager mes traductions'),
+                    subtitle: Text(
+                      '${_userInputService!.getUserInputCount()} entrées',
+                    ),
+                    onTap: () => Navigator.of(context).pop('share'),
+                  ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.storage),
+                  title: const Text('Sélectionner une base de données SQLite'),
+                  onTap: () => Navigator.of(context).pop('database'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.text_snippet),
+                  title: const Text('Sélectionner des fichiers source/cible'),
+                  onTap: () => Navigator.of(context).pop('files'),
+                ),
+              ],
             ),
-            if (_userInputService != null && _userInputService!.getUserInputCount() > 0)
-              ListTile(
-                leading: const Icon(Icons.share),
-                title: const Text('Partager mes traductions'),
-                subtitle: Text('${_userInputService!.getUserInputCount()} entrées'),
-                onTap: () => Navigator.of(context).pop('share'),
-              ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.storage),
-              title: const Text('Sélectionner une base de données SQLite'),
-              onTap: () => Navigator.of(context).pop('database'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.text_snippet),
-              title: const Text('Sélectionner des fichiers source/cible'),
-              onTap: () => Navigator.of(context).pop('files'),
-            ),
-          ],
-        ),
-      ),
+          ),
     );
 
     if (option == null) return;
@@ -1341,23 +1393,24 @@ class _TranslationScreenState extends State<TranslationScreen> {
       // Show warning dialog for database/file operations
       final confirmed = await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Attention'),
-          content: const Text(
-            'Toutes les données actuelles seront perdues. '
-            'Voulez-vous continuer ?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Annuler'),
+        builder:
+            (context) => AlertDialog(
+              title: const Text('Attention'),
+              content: const Text(
+                'Toutes les données actuelles seront perdues. '
+                'Voulez-vous continuer ?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Annuler'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Continuer'),
+                ),
+              ],
             ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Continuer'),
-            ),
-          ],
-        ),
       );
 
       if (confirmed != true) return;
@@ -1381,7 +1434,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
     void updateButtonState() {
       final newSourceHasText = sourceController.text.trim().isNotEmpty;
       final newTargetHasText = targetController.text.trim().isNotEmpty;
-      if (newSourceHasText != sourceHasText || newTargetHasText != targetHasText) {
+      if (newSourceHasText != sourceHasText ||
+          newTargetHasText != targetHasText) {
         sourceHasText = newSourceHasText;
         targetHasText = newTargetHasText;
         // Force rebuild of dialog
@@ -1394,78 +1448,79 @@ class _TranslationScreenState extends State<TranslationScreen> {
 
     final result = await showDialog<bool>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
-          // Update state when text changes
-          sourceController.addListener(() {
-            setState(() {});
-          });
-          targetController.addListener(() {
-            setState(() {});
-          });
+      builder:
+          (context) => StatefulBuilder(
+            builder: (context, setState) {
+              // Update state when text changes
+              sourceController.addListener(() {
+                setState(() {});
+              });
+              targetController.addListener(() {
+                setState(() {});
+              });
 
-          final canSave = sourceController.text.trim().isNotEmpty &&
-              targetController.text.trim().isNotEmpty;
+              final canSave =
+                  sourceController.text.trim().isNotEmpty &&
+                  targetController.text.trim().isNotEmpty;
 
-          return AlertDialog(
-            title: const Text('Enregistrer une traduction'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Source (${_getDisplayName(_sourceLang)})',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey.shade700,
-                    ),
+              return AlertDialog(
+                title: const Text('Enregistrer une traduction'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Source (${_getDisplayName(_sourceLang)})',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: sourceController,
+                        autofocus: true,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          hintText: 'Texte source...',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Cible (${_getDisplayName(_targetLang)})',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: targetController,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          hintText: 'Texte cible...',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: sourceController,
-                    autofocus: true,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      hintText: 'Texte source...',
-                      border: OutlineInputBorder(),
-                    ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Annuler'),
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Cible (${_getDisplayName(_targetLang)})',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: targetController,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      hintText: 'Texte cible...',
-                      border: OutlineInputBorder(),
-                    ),
+                  ElevatedButton(
+                    onPressed:
+                        canSave ? () => Navigator.of(context).pop(true) : null,
+                    child: const Text('Enregistrer'),
                   ),
                 ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Annuler'),
-              ),
-              ElevatedButton(
-                onPressed: canSave
-                    ? () => Navigator.of(context).pop(true)
-                    : null,
-                child: const Text('Enregistrer'),
-              ),
-            ],
-          );
-        },
-      ),
+              );
+            },
+          ),
     );
 
     sourceController.removeListener(updateButtonState);
@@ -1536,8 +1591,9 @@ class _TranslationScreenState extends State<TranslationScreen> {
       });
 
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['db', 'sqlite'],
+        //  yielded a bug
+        // FileType.custom
+        // allowedExtensions: ['db', 'sqlite'],
       );
 
       if (result == null || result.files.single.path == null) {
@@ -1556,7 +1612,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
       _searcher = null;
       _store?.close();
       _store = null;
-      
+
       // Wait a bit to ensure file handles are released
       await Future.delayed(const Duration(milliseconds: 100));
 
@@ -1569,7 +1625,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
       // Copy selected database
       await File(selectedPath).copy(targetPath);
       print('✅ Database copied to: $targetPath');
-      
+
       setState(() {
         _statusMessage = 'Chargement de la base de données...';
       });
@@ -1590,7 +1646,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
       setState(() {
         _isLoading = true;
         _error = null;
-        _statusMessage = 'Veuillez sélectionner le fichier source (ex. Français)...';
+        _statusMessage =
+            'Veuillez sélectionner le fichier source (ex. Français)...';
         _progressCurrent = 0;
         _progressTotal = 0;
       });
@@ -1612,7 +1669,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
       final sourcePath = sourceResult.files.single.path!;
 
       setState(() {
-        _statusMessage = 'Veuillez sélectionner le fichier cible (ex. Pulaar)...';
+        _statusMessage =
+            'Veuillez sélectionner le fichier cible (ex. Pulaar)...';
       });
 
       // Select target file
@@ -1635,7 +1693,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
       _searcher = null;
       _store?.close();
       _store = null;
-      
+
       // Wait a bit to ensure file handles are released
       await Future.delayed(const Duration(milliseconds: 100));
 
@@ -1656,21 +1714,24 @@ class _TranslationScreenState extends State<TranslationScreen> {
       final targetFile = File(targetPath);
       final sourceContent = await sourceFile.readAsString();
       final targetContent = await targetFile.readAsString();
-      final sourceLines = sourceContent
-          .split('\n')
-          .map((line) => line.trim())
-          .where((line) => line.isNotEmpty)
-          .toList();
-      final targetLines = targetContent
-          .split('\n')
-          .map((line) => line.trim())
-          .where((line) => line.isNotEmpty)
-          .toList();
+      final sourceLines =
+          sourceContent
+              .split('\n')
+              .map((line) => line.trim())
+              .where((line) => line.isNotEmpty)
+              .toList();
+      final targetLines =
+          targetContent
+              .split('\n')
+              .map((line) => line.trim())
+              .where((line) => line.isNotEmpty)
+              .toList();
 
       if (sourceLines.length != targetLines.length) {
         setState(() {
           _isLoading = false;
-          _error = 'Erreur : Les fichiers ont un nombre de lignes différent.\n'
+          _error =
+              'Erreur : Les fichiers ont un nombre de lignes différent.\n'
               'Source : ${sourceLines.length}, Cible : ${targetLines.length}';
           _statusMessage = null;
         });
@@ -1679,7 +1740,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
 
       // Generate embeddings from files
       setState(() {
-        _statusMessage = 'Génération des embeddings (cela peut prendre un moment)...';
+        _statusMessage =
+            'Génération des embeddings (cela peut prendre un moment)...';
         _progressCurrent = 0;
         _progressTotal = sourceLines.length;
       });
@@ -1700,7 +1762,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
           }
         },
       );
-      
+
       setState(() {
         _statusMessage = 'Chargement de la base de données...';
       });
@@ -1733,9 +1795,10 @@ class _LanguageDirectionSwitcher extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isFrenchToFula = direction == TranslationDirection.frenchToFula;
-    final label = isFrenchToFula
-        ? 'Français → Pulaar'
-        : 'Pulaar → Français'; // french => fula
+    final label =
+        isFrenchToFula
+            ? 'Français → Pulaar'
+            : 'Pulaar → Français'; // french => fula
 
     return Material(
       color: Colors.transparent,

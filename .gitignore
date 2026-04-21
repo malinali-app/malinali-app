@@ -63,3 +63,4 @@ macos/onnx_runtime
 malinali.dmg
 /doc_ai
 /assets/models/all-MiniLM-L6-v2.onnx
+pubspec.lock
