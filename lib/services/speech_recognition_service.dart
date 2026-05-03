@@ -127,7 +127,7 @@ class SpeechRecognitionService {
 
     _isListening = false;
     
-    // Cancel stream subscriptions
+    // Cancel stream subscriptions immediately
     await _partialSubscription?.cancel();
     _partialSubscription = null;
     await _resultSubscription?.cancel();
@@ -137,8 +137,9 @@ class SpeechRecognitionService {
     if (Platform.isAndroid && _speechService != null) {
       try {
         await _speechService!.stop();
+        print('✅ Speech service stopped');
       } catch (e) {
-        print('Error stopping speech service: $e');
+        print('❌ Error stopping speech service: $e');
       }
     }
   }

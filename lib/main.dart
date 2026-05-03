@@ -224,12 +224,14 @@ class _TranslationScreenState extends State<TranslationScreen> {
       _speechService = SpeechRecognitionService();
 
       // Set up callbacks
-      _speechService!.onResult = (text) {
+      _speechService!.onResult = (text) async {
         if (mounted) {
           setState(() {
             _inputController.text = text;
             _isListening = false;
           });
+          // Stop listening before translation to prevent background recording
+          await _speechService!.stopListening();
           // Auto-translate after speech recognition
           _translate();
         }
