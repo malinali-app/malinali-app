@@ -20,60 +20,74 @@ class UserInputService {
   void _createTables() {
     final db = _db!;
 
-    // Create translations table (same structure as searcher_points text columns)
-    // Add is_user_input flag to label user entries
+    // Create user_inputs table (separate from main translations dataset)
     db.execute('''
-      CREATE TABLE IF NOT EXISTS translations (
+      CREATE TABLE IF NOT EXISTS user_inputs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source_text TEXT NOT NULL,
         target_text TEXT NOT NULL,
         source_lang TEXT,
         target_lang TEXT,
-        is_user_input INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     ''');
 
-    // Add is_user_input column if table exists without it (migration)
+    // Migration: Move data from translations table if it exists and has user inputs
     try {
-      db.execute('ALTER TABLE translations ADD COLUMN is_user_input INTEGER NOT NULL DEFAULT 0');
+      final tableCheck = db.select(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='translations'",
+      );
+      if (tableCheck.isNotEmpty) {
+        // Check if is_user_input column exists
+        final columnCheck = db.select("PRAGMA table_info(translations)");
+        final hasUserInputCol = columnCheck.any(
+          (row) => row['name'] == 'is_user_input',
+        );
+
+        if (hasUserInputCol) {
+          db.execute('''
+            INSERT INTO user_inputs (source_text, target_text, source_lang, target_lang, created_at)
+            SELECT source_text, target_text, source_lang, target_lang, created_at
+            FROM translations
+            WHERE is_user_input = 1
+          ''');
+          // After migration, we could delete the migrated rows, 
+          // but it's safer to just leave them for now or let the user delete them.
+          // For now, we just mark them as migrated by deleting them from the old table
+          db.execute('DELETE FROM translations WHERE is_user_input = 1');
+        }
+      }
     } catch (e) {
-      // Column already exists, ignore
+      print('Migration warning: $e');
     }
 
-    // Create FTS virtual table for full-text search (same structure as searcher_points_fts)
+    // Create FTS virtual table for user_inputs
     try {
       db.execute('''
-        CREATE VIRTUAL TABLE IF NOT EXISTS translations_fts USING fts5(
+        CREATE VIRTUAL TABLE IF NOT EXISTS user_inputs_fts USING fts5(
           id UNINDEXED,
           source_text,
           target_text
         )
       ''');
     } catch (e) {
-      // Try FTS4 as fallback
       try {
         db.execute('''
-          CREATE VIRTUAL TABLE IF NOT EXISTS translations_fts USING fts4(
+          CREATE VIRTUAL TABLE IF NOT EXISTS user_inputs_fts USING fts4(
             id,
             source_text,
             target_text
           )
         ''');
       } catch (e2) {
-        // FTS not available, continue without it
-        print('Warning: FTS not available for translations. Full-text search will be disabled.');
+        print('Warning: FTS not available for user_inputs.');
       }
     }
 
     // Create indexes for faster lookups
     db.execute('''
-      CREATE INDEX IF NOT EXISTS idx_translations_created_at
-      ON translations(created_at)
-    ''');
-    db.execute('''
-      CREATE INDEX IF NOT EXISTS idx_translations_user_input
-      ON translations(is_user_input)
+      CREATE INDEX IF NOT EXISTS idx_user_inputs_created_at
+      ON user_inputs(created_at)
     ''');
   }
 
@@ -86,33 +100,32 @@ class UserInputService {
     String? targetLang,
   }) async {
     final db = _db!;
-    
-    // Insert into translations table with is_user_input = 1
+
+    // Insert into user_inputs table
     final insertStmt = db.prepare('''
-      INSERT INTO translations (source_text, target_text, source_lang, target_lang, is_user_input)
-      VALUES (?, ?, ?, ?, 1)
+      INSERT INTO user_inputs (source_text, target_text, source_lang, target_lang)
+      VALUES (?, ?, ?, ?)
     ''');
-    
+
     insertStmt.execute([
       sourceText.trim(),
       targetText.trim(),
       sourceLang,
       targetLang,
     ]);
-    
+
     final id = db.lastInsertRowId;
     insertStmt.dispose();
 
     // Update FTS index (if available)
     try {
       final ftsStmt = db.prepare('''
-        INSERT INTO translations_fts (id, source_text, target_text)
+        INSERT INTO user_inputs_fts (id, source_text, target_text)
         VALUES (?, ?, ?)
       ''');
       ftsStmt.execute([id, sourceText.trim(), targetText.trim()]);
       ftsStmt.dispose();
     } catch (e) {
-      // FTS might not be available, ignore
       print('Warning: Could not update FTS index: $e');
     }
 
@@ -128,19 +141,19 @@ class UserInputService {
     try {
       // Escape special FTS characters
       var escapedQuery = query.replaceAll("'", "''");
-      
-      // Try FTS search (only user inputs: is_user_input = 1)
+
+      // Try FTS search
       final ftsStmt = db.prepare('''
         SELECT t.id, t.source_text, t.target_text, t.source_lang, t.target_lang
-        FROM translations_fts fts
-        JOIN translations t ON t.id = fts.id
-        WHERE translations_fts MATCH ? AND t.is_user_input = 1
+        FROM user_inputs_fts fts
+        JOIN user_inputs t ON t.id = fts.id
+        WHERE user_inputs_fts MATCH ?
         ORDER BY rank
         LIMIT 20
       ''');
-      
+
       final rows = ftsStmt.select([escapedQuery]);
-      
+
       for (final row in rows) {
         results.add({
           'id': row[0] as int,
@@ -150,21 +163,21 @@ class UserInputService {
           'targetLang': row[4] as String?,
         });
       }
-      
+
       ftsStmt.dispose();
     } catch (e) {
-      // Fallback to simple LIKE search if FTS fails (only user inputs)
+      // Fallback to simple LIKE search
       final likeStmt = db.prepare('''
         SELECT id, source_text, target_text, source_lang, target_lang
-        FROM translations
-        WHERE is_user_input = 1 AND (source_text LIKE ? OR target_text LIKE ?)
+        FROM user_inputs
+        WHERE source_text LIKE ? OR target_text LIKE ?
         ORDER BY created_at DESC
         LIMIT 20
       ''');
-      
+
       final searchPattern = '%$query%';
       final rows = likeStmt.select([searchPattern, searchPattern]);
-      
+
       for (final row in rows) {
         results.add({
           'id': row[0] as int,
@@ -174,7 +187,7 @@ class UserInputService {
           'targetLang': row[4] as String?,
         });
       }
-      
+
       likeStmt.dispose();
     }
 
@@ -188,8 +201,7 @@ class UserInputService {
 
     final stmt = db.prepare('''
       SELECT id, source_text, target_text, source_lang, target_lang, created_at
-      FROM translations
-      WHERE is_user_input = 1
+      FROM user_inputs
       ORDER BY created_at DESC
     ''');
 
@@ -213,15 +225,15 @@ class UserInputService {
   Future<bool> deleteUserInput(int id) async {
     final db = _db!;
 
-    // Delete from main table (only if it's a user input)
-    final deleteStmt = db.prepare('DELETE FROM translations WHERE id = ? AND is_user_input = 1');
+    // Delete from main table
+    final deleteStmt = db.prepare('DELETE FROM user_inputs WHERE id = ?');
     deleteStmt.execute([id]);
     final changes = db.lastInsertRowId;
     deleteStmt.dispose();
 
     // Delete from FTS index (if available)
     try {
-      final ftsDeleteStmt = db.prepare('DELETE FROM translations_fts WHERE id = ?');
+      final ftsDeleteStmt = db.prepare('DELETE FROM user_inputs_fts WHERE id = ?');
       ftsDeleteStmt.execute([id]);
       ftsDeleteStmt.dispose();
     } catch (e) {
@@ -234,7 +246,7 @@ class UserInputService {
   /// Get count of user inputs.
   int getUserInputCount() {
     final db = _db!;
-    final stmt = db.prepare('SELECT COUNT(*) FROM translations WHERE is_user_input = 1');
+    final stmt = db.prepare('SELECT COUNT(*) FROM user_inputs');
     final result = stmt.select([]);
     final count = result.first[0] as int;
     stmt.dispose();

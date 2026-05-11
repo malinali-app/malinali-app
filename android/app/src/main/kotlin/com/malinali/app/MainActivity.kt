@@ -1,4 +1,4 @@
-package com.malinali.app
+package app.malinali.l10n
 
 import io.flutter.embedding.android.FlutterActivity
 

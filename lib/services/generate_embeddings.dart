@@ -4,7 +4,7 @@ import 'package:ml_algo/src/persistence/sqlite_neighbor_search_store.dart';
 import 'package:ml_algo/src/retrieval/hybrid_fts_searcher.dart';
 import 'package:ml_algo/src/retrieval/translation_pair.dart';
 import 'package:malinali/services/embedding_service.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 /// Standalone function to generate embeddings from source and target text files.
 ///
@@ -123,5 +123,121 @@ Future<void> generateEmbeddingsFromFiles({
 
   print('✅ Created ${translations.length} translation pairs');
   print('✅ Database saved to: $dbPath');
+}
+
+/// Generates embeddings for an existing database that has a 'translations' table.
+///
+/// This function:
+/// 1. Reads translation pairs from the 'translations' table
+/// 2. Generates embeddings for the source text
+/// 3. Creates/Updates the HybridFTSSearcher in the database
+Future<void> generateEmbeddingsFromDatabase({
+  required String dbPath,
+  String searcherId = 'fula',
+  void Function(int current, int total)? onProgress,
+}) async {
+  // Step 1: Read translations from database
+  print('Reading translations from database: $dbPath');
+  final db = sqlite3.open(dbPath);
+
+  final List<Map<String, String>> rows = [];
+  try {
+    // 1. Try to read from main 'translations' table
+    try {
+      final resultSet = db.select(
+        'SELECT source_text, target_text FROM translations',
+      );
+      for (final row in resultSet) {
+        rows.add({
+          'source': row['source_text'] as String,
+          'target': row['target_text'] as String,
+        });
+      }
+      print('✅ Loaded ${resultSet.length} pairs from "translations" table');
+    } catch (e) {
+      print('ℹ️ No "translations" table found or error reading it: $e');
+    }
+
+    // 2. Try to read from 'user_inputs' table
+    try {
+      final userResultSet = db.select(
+        'SELECT source_text, target_text FROM user_inputs',
+      );
+      for (final row in userResultSet) {
+        rows.add({
+          'source': row['source_text'] as String,
+          'target': row['target_text'] as String,
+        });
+      }
+      print('✅ Loaded ${userResultSet.length} pairs from "user_inputs" table');
+    } catch (e) {
+      print('ℹ️ No "user_inputs" table found or error reading it: $e');
+    }
+  } finally {
+    db.dispose();
+  }
+
+  if (rows.isEmpty) {
+    print('⚠️ No translations found in database');
+    return;
+  }
+
+  print('✅ Loaded ${rows.length} translation pairs from database');
+
+  // Step 2: Initialize EmbeddingService
+  print('Initializing embedding service...');
+  final embeddingService = EmbeddingService();
+  await embeddingService.initialize();
+
+  // Step 3: Set up SQLite store
+  final store = SQLiteNeighborSearchStore(dbPath);
+
+  // Step 4: Create translation pairs and generate embeddings
+  print('Generating embeddings...');
+  final translations = <TranslationPair>[];
+
+  for (var i = 0; i < rows.length; i++) {
+    final source = rows[i]['source']!;
+    final target = rows[i]['target']!;
+
+    if (source.isEmpty || target.isEmpty) continue;
+
+    // Generate embedding for source language
+    final embeddingVector = await embeddingService.generateEmbedding(source);
+
+    translations.add(
+      TranslationPair(
+        source: source,
+        target: target,
+        embedding: embeddingVector.toList(),
+      ),
+    );
+
+    // Progress callback
+    if (onProgress != null) {
+      onProgress(i + 1, rows.length);
+    }
+
+    // Progress indicator
+    if ((i + 1) % 500 == 0) {
+      print('  Processed ${i + 1}/${rows.length} pairs...');
+    }
+  }
+
+  // Step 5: Create searcher and save to database
+  print('Building searcher and saving to database...');
+  await HybridFTSSearcher.createFromTranslations(
+    store,
+    translations,
+    digitCapacity: 8,
+    searcherId: searcherId,
+  );
+
+  // Clean up
+  embeddingService.dispose();
+  store.close();
+
+  print('✅ Created ${translations.length} translation pairs');
+  print('✅ Database indexed at: $dbPath');
 }
 

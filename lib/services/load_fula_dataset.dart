@@ -4,7 +4,7 @@ import 'package:ml_algo/src/persistence/sqlite_neighbor_search_store.dart';
 import 'package:ml_algo/src/retrieval/hybrid_fts_searcher.dart';
 import 'package:ml_algo/src/retrieval/translation_pair.dart';
 import 'package:malinali/services/embedding_service.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:malinali/services/storage_service.dart';
 
 /// Loads a text file from assets, one line per entry
 Future<List<String>> loadTextFileFromAssets(String assetPath) async {
@@ -52,8 +52,7 @@ Future<void> loadFrenchFulaDataset() async {
   print('✅ Loaded ${frenchLines.length} translation pairs');
 
   // Step 3: Set up SQLite store
-  final appDir = await getApplicationDocumentsDirectory();
-  final dbPath = '${appDir.path}/malinali.db';
+  final dbPath = await StorageService.getDatabasePath();
   final store = SQLiteNeighborSearchStore(dbPath);
 
   // Step 4: Create translation pairs for BOTH English→Fula and French→Fula

@@ -3,10 +3,11 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:malinali/services/generate_embeddings.dart';
 import 'package:archive/archive.dart';
+import 'package:malinali/services/storage_service.dart';
 
+/// ! no longer used, only for debugging purposes
 /// Initial setup screen that allows users to either:
 /// 1. Select an existing SQLite database
 /// 2. Select source and target .txt files to generate embeddings
@@ -40,8 +41,7 @@ class _SetupScreenState extends State<SetupScreen> {
         });
 
         final selectedPath = result.files.single.path!;
-        final appDir = await getApplicationDocumentsDirectory();
-        final targetPath = '${appDir.path}/malinali.db';
+        final targetPath = await StorageService.getDatabasePath();
 
         // Copy the selected database to malinali.db
         final sourceFile = File(selectedPath);
@@ -56,6 +56,35 @@ class _SetupScreenState extends State<SetupScreen> {
         final copiedStat = await File(targetPath).stat();
         print('✅ Database copied to: $targetPath');
         print('   Copied database size: ${copiedStat.size} bytes');
+
+        // Index the database semantically
+        setState(() {
+          _statusMessage = 'Indexation sémantique de la base de données...';
+          _progressCurrent = 0;
+          _progressTotal = 0;
+        });
+
+        await generateEmbeddingsFromDatabase(
+          dbPath: targetPath,
+          searcherId: 'fula',
+          onProgress: (current, total) {
+            if (mounted) {
+              setState(() {
+                _progressCurrent = current;
+                _progressTotal = total;
+                _statusMessage =
+                    'Indexation sémantique : $current / $total (${((current / total) * 100).toStringAsFixed(1)}%)';
+              });
+            }
+          },
+        );
+
+        setState(() {
+          _statusMessage = '✅ Base de données indexée avec succès !';
+        });
+
+        // Wait a moment to show success message
+        await Future.delayed(const Duration(seconds: 1));
 
         // Call completion callback
         if (mounted) {
@@ -109,9 +138,8 @@ class _SetupScreenState extends State<SetupScreen> {
       }
 
       // Write database to app directory
-      final appDir = await getApplicationDocumentsDirectory();
-      final dbPath = '${appDir.path}/malinali.db';
-      
+      final dbPath = await StorageService.getDatabasePath();
+
       setState(() {
         _statusMessage = 'Copie de la base de données...';
       });
@@ -128,8 +156,30 @@ class _SetupScreenState extends State<SetupScreen> {
       print('   Database size: ${dbStat.size} bytes');
       print('   Database modified: ${dbStat.modified}');
 
+      // Index the database semantically
       setState(() {
-        _statusMessage = '✅ Base de données chargée avec succès !';
+        _statusMessage = 'Indexation sémantique de la base de données...';
+        _progressCurrent = 0;
+        _progressTotal = 0;
+      });
+
+      await generateEmbeddingsFromDatabase(
+        dbPath: dbPath,
+        searcherId: 'fula',
+        onProgress: (current, total) {
+          if (mounted) {
+            setState(() {
+              _progressCurrent = current;
+              _progressTotal = total;
+              _statusMessage =
+                  'Indexation sémantique : $current / $total (${((current / total) * 100).toStringAsFixed(1)}%)';
+            });
+          }
+        },
+      );
+
+      setState(() {
+        _statusMessage = '✅ Base de données indexée avec succès !';
       });
 
       // Wait a moment to show success message
@@ -236,8 +286,7 @@ class _SetupScreenState extends State<SetupScreen> {
         _progressTotal = sourceLines.length;
       });
 
-      final appDir = await getApplicationDocumentsDirectory();
-      final dbPath = '${appDir.path}/malinali.db';
+      final dbPath = await StorageService.getDatabasePath();
 
       await generateEmbeddingsFromFiles(
         sourceFilePath: sourcePath,
@@ -305,7 +354,7 @@ class _SetupScreenState extends State<SetupScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Choisissez comment configurer la base de données de traduction :',
+                'Choisissez comment configurer l\'application :',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 16, color: Colors.grey),
               ),
@@ -349,6 +398,21 @@ class _SetupScreenState extends State<SetupScreen> {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton.icon(
+                  onPressed: _isProcessing ? null : _useDefaultDemo,
+                 // icon: const Icon(Icons.play_circle_outline),
+                  label: const Text('Utiliser la version par défaut\n(français-pulaar)'),
+                  style: ElevatedButton.styleFrom(
+                    textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+                  const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton.icon(
                   onPressed: _isProcessing ? null : _selectDatabase,
                   icon: const Icon(Icons.storage),
                   label: const Text('Sélectionner une base de données SQLite'),
@@ -364,27 +428,13 @@ class _SetupScreenState extends State<SetupScreen> {
                 child: ElevatedButton.icon(
                   onPressed: _isProcessing ? null : _selectTextFiles,
                   icon: const Icon(Icons.text_snippet),
-                  label: const Text('Sélectionner des fichiers source/cible (.txt)'),
+                  label: const Text('Sélectionner des fichiers source/cible'),
                   style: ElevatedButton.styleFrom(
                     textStyle: const TextStyle(fontSize: 16),
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton.icon(
-                  onPressed: _isProcessing ? null : _useDefaultDemo,
-                  icon: const Icon(Icons.play_circle_outline),
-                  label: const Text('Utiliser la démo par défaut'),
-                  style: ElevatedButton.styleFrom(
-                    textStyle: const TextStyle(fontSize: 16),
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ),
+          
               if (_statusMessage != null &&
                   _statusMessage!.startsWith('Erreur'))
                 Padding(

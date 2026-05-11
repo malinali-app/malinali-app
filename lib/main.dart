@@ -5,17 +5,19 @@ import 'package:ml_algo/src/persistence/sqlite_neighbor_search_store.dart';
 import 'package:ml_algo/src/retrieval/hybrid_fts_searcher.dart';
 import 'package:ml_algo/src/retrieval/translation_result.dart';
 import 'package:ml_linalg/vector.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:malinali/services/embedding_service.dart';
 import 'package:malinali/services/query_stemmer.dart';
-import 'package:malinali/setup_screen.dart';
+// import 'package:malinali/setup_screen.dart';
 import 'package:malinali/services/generate_embeddings.dart';
 import 'package:malinali/services/user_input_service.dart';
 import 'package:malinali/services/speech_recognition_service.dart';
+import 'package:malinali/services/storage_service.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:cross_file/cross_file.dart';
 import 'dart:io';
+import 'package:flutter/services.dart';
+import 'package:archive/archive.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -64,52 +66,64 @@ class _InitialScreenState extends State<InitialScreen> {
 
   Future<void> _checkDatabase() async {
     try {
-      final appDir = await getApplicationDocumentsDirectory();
-      final dbPath = '${appDir.path}/malinali.db';
+      final dbPath = await StorageService.getDatabasePath();
       final dbFile = File(dbPath);
-      final exists = await dbFile.exists();
+      bool exists = await dbFile.exists();
 
-      // Debug logging
-      print('🔍 Checking database at: $dbPath');
-      print('   Database exists: $exists');
       if (exists) {
         final stat = await dbFile.stat();
-        print('   Database size: ${stat.size} bytes');
-        print('   Database modified: ${stat.modified}');
-      }
-
-      if (mounted) {
-        setState(() {
-          _isChecking = false;
-        });
-
-        // If database exists and has content (size > 0), go to translation screen
-        if (exists) {
-          final stat = await dbFile.stat();
-          if (stat.size > 0) {
-            print(
-              '✅ Database found and valid, navigating to TranslationScreen',
-            );
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(
-                builder: (context) => const TranslationScreen(),
-              ),
-            );
-          } else {
-            print(
-              '⚠️  Database file exists but is empty, showing setup screen',
-            );
-          }
-        } else {
-          print('ℹ️  Database not found, showing setup screen');
+        if (stat.size == 0) {
+          exists = false;
         }
       }
-    } catch (e) {
-      print('❌ Error checking database: $e');
+
+      if (!exists) {
+        print('ℹ️  Database not found, extracting default demo database...');
+        // Load zipped database from assets
+        final ByteData zipData = await rootBundle.load('assets/malinali.db.zip');
+        final Uint8List zipBytes = zipData.buffer.asUint8List();
+
+        final Archive archive = ZipDecoder().decodeBytes(zipBytes);
+
+        // Get the database file from the archive
+        ArchiveFile? dbFileInArchive;
+        for (final file in archive) {
+          if (file.name == 'malinali.db' || file.name.endsWith('.db')) {
+            dbFileInArchive = file;
+            break;
+          }
+        }
+
+        if (dbFileInArchive == null) {
+          throw Exception('Database file not found in archive');
+        }
+
+        // Write database to storage directory
+        await dbFile.writeAsBytes(dbFileInArchive.content as List<int>);
+        print('✅ Default database extracted successfully');
+      }
+
       if (mounted) {
         setState(() {
           _isChecking = false;
         });
+
+        print('✅ Database ready, navigating to TranslationScreen');
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const TranslationScreen()),
+        );
+      }
+    } catch (e) {
+      print('❌ Error initializing database: $e');
+      if (mounted) {
+        setState(() {
+          _isChecking = false;
+        });
+        // If extraction fails, we might still want to show setup screen as fallback
+        // but the user wants to "jump on", so let's show an error if it really fails
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur d\'initialisation : $e')),
+        );
       }
     }
   }
@@ -125,12 +139,7 @@ class _InitialScreenState extends State<InitialScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isChecking) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    // Show setup screen if database doesn't exist
-    return SetupScreen(onComplete: _onSetupComplete);
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }
 
@@ -312,8 +321,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
       final embeddingService = EmbeddingService();
       await embeddingService.initialize();
 
-      final appDir = await getApplicationDocumentsDirectory();
-      final dbPath = '${appDir.path}/malinali.db';
+      final dbPath = await StorageService.getDatabasePath();
       final dbFile = File(dbPath);
 
       // Check if database exists
@@ -938,12 +946,12 @@ class _TranslationScreenState extends State<TranslationScreen> {
       }
 
       // Create files in application documents directory (like weebi pattern)
-      final appDir = await getApplicationDocumentsDirectory();
+      final storagePath = await StorageService.getStorageDirectoryPath();
       final sourceFile = File(
-        '${appDir.path}${Platform.pathSeparator}source.txt',
+        '$storagePath${Platform.pathSeparator}source.txt',
       );
       final targetFile = File(
-        '${appDir.path}${Platform.pathSeparator}target.txt',
+        '$storagePath${Platform.pathSeparator}target.txt',
       );
 
       // Write source.txt (one translation per line with "- " prefix)
@@ -1013,21 +1021,20 @@ class _TranslationScreenState extends State<TranslationScreen> {
     super.dispose();
   }
 
-  Future<void> _goToSetup() async {
-    // Delete the database so setup screen will be shown
+  Future<void> _resetDatabase() async {
+    // Delete the database so it will be re-extracted from assets
     try {
-      final appDir = await getApplicationDocumentsDirectory();
-      final dbPath = '${appDir.path}/malinali.db';
+      final dbPath = await StorageService.getDatabasePath();
       final dbFile = File(dbPath);
       if (await dbFile.exists()) {
         await dbFile.delete();
-        print('✅ Deleted database to trigger setup screen');
+        print('✅ Deleted database for reset');
       }
     } catch (e) {
       print('Warning: Could not delete database: $e');
     }
 
-    // Navigate back to initial screen (which will show setup)
+    // Navigate back to initial screen (which will re-extract and initialize)
     if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const InitialScreen()),
@@ -1110,9 +1117,9 @@ class _TranslationScreenState extends State<TranslationScreen> {
               ),
               const SizedBox(height: 32),
               ElevatedButton.icon(
-                onPressed: _goToSetup,
-                icon: const Icon(Icons.settings),
-                label: const Text('Go to Setup'),
+                onPressed: _resetDatabase,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Réinitialiser la base de données'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 24,
@@ -1607,8 +1614,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
       }
 
       final selectedPath = result.files.single.path!;
-      final appDir = await getApplicationDocumentsDirectory();
-      final targetPath = '${appDir.path}/malinali.db';
+      final targetPath = await StorageService.getDatabasePath();
 
       // Close current searcher and store to release database lock
       _searcher = null;
@@ -1627,6 +1633,28 @@ class _TranslationScreenState extends State<TranslationScreen> {
       // Copy selected database
       await File(selectedPath).copy(targetPath);
       print('✅ Database copied to: $targetPath');
+
+      // Index the database semantically
+      setState(() {
+        _statusMessage = 'Indexation sémantique de la base de données...';
+        _progressCurrent = 0;
+        _progressTotal = 0;
+      });
+
+      await generateEmbeddingsFromDatabase(
+        dbPath: targetPath,
+        searcherId: 'fula',
+        onProgress: (current, total) {
+          if (mounted) {
+            setState(() {
+              _progressCurrent = current;
+              _progressTotal = total;
+              _statusMessage =
+                  'Indexation sémantique : $current / $total (${((current / total) * 100).toStringAsFixed(1)}%)';
+            });
+          }
+        },
+      );
 
       setState(() {
         _statusMessage = 'Chargement de la base de données...';
@@ -1700,8 +1728,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
       await Future.delayed(const Duration(milliseconds: 100));
 
       // Delete existing database
-      final appDir = await getApplicationDocumentsDirectory();
-      final dbPath = '${appDir.path}/malinali.db';
+      final dbPath = await StorageService.getDatabasePath();
       final dbFile = File(dbPath);
       if (await dbFile.exists()) {
         await dbFile.delete();

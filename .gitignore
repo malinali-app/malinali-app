@@ -64,3 +64,6 @@ malinali.dmg
 /doc_ai
 /assets/models/all-MiniLM-L6-v2.onnx
 pubspec.lock
+/BUILDME.md
+/assets/combined_src.txt
+/assets/combined_tgt.txt

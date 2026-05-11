@@ -6,9 +6,9 @@ import 'package:fonnx/ort_minilm_isolate.dart';
 import 'package:malinali/services/multilingual_tokenizer.dart';
 import 'package:fonnx/tokenizers/wordpiece_tokenizer.dart';
 import 'package:ml_linalg/vector.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:malinali/services/model_output_inspector.dart';
 import 'package:archive/archive.dart';
+import 'package:malinali/services/storage_service.dart';
 
 /// Service for generating text embeddings using the ONNX model.
 ///
@@ -42,9 +42,11 @@ class EmbeddingService {
 
     try {
       // Extract model from zipped assets to app directory (ONNX needs file path)
-      final appDir = await getApplicationDocumentsDirectory();
-      final modelFile = File('${appDir.path}/all-MiniLM-L6-v2.onnx');
-      final tokenizerFile = File('${appDir.path}/tokenizer.json');
+      final modelPath = await StorageService.getModelPath();
+      final modelFile = File(modelPath);
+      
+      final storageDirPath = await StorageService.getStorageDirectoryPath();
+      final tokenizerFile = File('$storageDirPath/tokenizer.json');
 
       // Extract model from zip if not exists
       if (!await modelFile.exists()) {
