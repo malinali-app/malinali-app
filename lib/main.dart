@@ -1,5 +1,5 @@
 // ignore_for_file: implementation_imports
-import 'package:flutter/foundation.dart' show compute, kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:ml_algo/src/persistence/sqlite_neighbor_search_store.dart';
 import 'package:ml_algo/src/retrieval/hybrid_fts_searcher.dart';
@@ -9,12 +9,13 @@ import 'package:malinali/services/embedding_service.dart';
 import 'package:malinali/services/query_stemmer.dart';
 // import 'package:malinali/setup_screen.dart';
 import 'package:malinali/services/generate_embeddings.dart';
-import 'package:malinali/services/user_input_service.dart';
 import 'package:malinali/services/speech_recognition_service.dart';
 import 'package:malinali/services/storage_service.dart';
+import 'package:malinali/services/turso_sync_service.dart';
+import 'package:malinali/services/local_indexer_service.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:sqlite3/sqlite3.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:cross_file/cross_file.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:archive/archive.dart';
@@ -56,8 +57,6 @@ class InitialScreen extends StatefulWidget {
 }
 
 class _InitialScreenState extends State<InitialScreen> {
-  bool _isChecking = true;
-
   @override
   void initState() {
     super.initState();
@@ -66,19 +65,19 @@ class _InitialScreenState extends State<InitialScreen> {
 
   Future<void> _checkDatabase() async {
     try {
-      final dbPath = await StorageService.getDatabasePath();
-      final dbFile = File(dbPath);
-      bool exists = await dbFile.exists();
+      final syncDbPath = await StorageService.getSyncDatabasePath();
+      final syncDbFile = File(syncDbPath);
+      bool exists = await syncDbFile.exists();
 
       if (exists) {
-        final stat = await dbFile.stat();
+        final stat = await syncDbFile.stat();
         if (stat.size == 0) {
           exists = false;
         }
       }
 
       if (!exists) {
-        print('ℹ️  Database not found, extracting default demo database...');
+        print('ℹ️  Sync database not found, extracting default demo database...');
         // Load zipped database from assets
         final ByteData zipData = await rootBundle.load('assets/malinali.db.zip');
         final Uint8List zipBytes = zipData.buffer.asUint8List();
@@ -99,15 +98,11 @@ class _InitialScreenState extends State<InitialScreen> {
         }
 
         // Write database to storage directory
-        await dbFile.writeAsBytes(dbFileInArchive.content as List<int>);
-        print('✅ Default database extracted successfully');
+        await syncDbFile.writeAsBytes(dbFileInArchive.content as List<int>);
+        print('✅ Default sync database extracted successfully');
       }
 
       if (mounted) {
-        setState(() {
-          _isChecking = false;
-        });
-
         print('✅ Database ready, navigating to TranslationScreen');
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const TranslationScreen()),
@@ -116,24 +111,12 @@ class _InitialScreenState extends State<InitialScreen> {
     } catch (e) {
       print('❌ Error initializing database: $e');
       if (mounted) {
-        setState(() {
-          _isChecking = false;
-        });
         // If extraction fails, we might still want to show setup screen as fallback
         // but the user wants to "jump on", so let's show an error if it really fails
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erreur d\'initialisation : $e')),
         );
       }
-    }
-  }
-
-  void _onSetupComplete() {
-    // Navigate to translation screen when setup is complete
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const TranslationScreen()),
-      );
     }
   }
 
@@ -158,7 +141,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
   SQLiteNeighborSearchStore?
   _store; // Keep reference to store to close it properly
   EmbeddingService? _embeddingService;
-  UserInputService? _userInputService;
+  TursoSyncService? _syncService;
   SpeechRecognitionService? _speechService;
   bool _isLoading = true;
   bool _isTranslating = false;
@@ -335,13 +318,29 @@ class _TranslationScreenState extends State<TranslationScreen> {
 
       // Close previous store if it exists
       _store?.close();
-      _userInputService?.close();
+      _syncService?.dispose();
 
       final store = SQLiteNeighborSearchStore(dbPath);
       _store = store; // Keep reference
 
-      // Initialize user input service
-      _userInputService = UserInputService(dbPath);
+      // Initialize Turso sync service
+      _syncService = TursoSyncService();
+      await _syncService!.initialize();
+
+      // Run local indexer to ensure search DB is up to date with sync DB
+      final indexer = LocalIndexerService(embeddingService);
+      setState(() {
+        _statusMessage = 'Vérification de l\'index de recherche...';
+      });
+      await indexer.indexNewTranslations(
+        onProgress: (current, total) {
+          setState(() {
+            _progressCurrent = current;
+            _progressTotal = total;
+            _statusMessage = 'Indexation locale : $current / $total';
+          });
+        },
+      );
 
       // Load existing searcher from database
       HybridFTSSearcher? searcher;
@@ -447,44 +446,6 @@ class _TranslationScreenState extends State<TranslationScreen> {
         );
         print('DEBUG: Keyword search found ${keywordResults.length} results');
 
-        // Also search user inputs
-        List<TranslationResult> userInputResults = [];
-        if (_userInputService != null) {
-          final userInputs = _userInputService!.searchUserInputs(inputText);
-          // Convert user inputs to TranslationResult format
-          // For Fula → French/English, user inputs have sourceText = Fula, targetText = French/English
-          for (var i = 0; i < userInputs.length; i++) {
-            final input = userInputs[i];
-            // Check if the user input matches the target language
-            final matchesTarget =
-                _targetLang == 'English'
-                    ? (input['sourceLang'] == 'Fula' ||
-                        input['targetLang'] == 'English')
-                    : (input['sourceLang'] == 'Fula' ||
-                        input['targetLang'] == 'French');
-
-            if (matchesTarget || input['sourceLang'] == null) {
-              // Create a pseudo TranslationResult for user input
-              // We'll use a special pointIndex (negative) to identify user inputs
-              userInputResults.add(
-                TranslationResult(
-                  sourceText:
-                      input['targetText'] as String, // Target language text
-                  targetText:
-                      input['sourceText']
-                          as String, // Fula text (what user searched)
-                  distance: 0.0, // User inputs get priority (distance 0)
-                  pointIndex:
-                      -(input['id'] as int), // Negative index for user inputs
-                ),
-              );
-            }
-          }
-          print(
-            'DEBUG: User input search found ${userInputResults.length} results',
-          );
-        }
-
         // Filter results to match target language (English or French)
         // Results have: sourceText = French/English, targetText = Fula (what user searched for)
         if (_targetLang == 'English') {
@@ -518,9 +479,6 @@ class _TranslationScreenState extends State<TranslationScreen> {
           // No filtering needed if target is Fula (shouldn't happen in this branch)
           results = keywordResults;
         }
-
-        // Add user inputs at the beginning (they have priority)
-        results = [...userInputResults, ...results];
 
         // Look for exact match
         TranslationResult? exactMatch;
@@ -573,41 +531,6 @@ class _TranslationScreenState extends State<TranslationScreen> {
         print(
           'DEBUG: Keyword search (stemmed: "$stemmedQuery") found ${keywordResults.length} results',
         );
-
-        // Also search user inputs
-        List<TranslationResult> userInputResults = [];
-        if (_userInputService != null) {
-          final userInputs = _userInputService!.searchUserInputs(inputText);
-          // Convert user inputs to TranslationResult format
-          // For French/English → Fula, user inputs have sourceText = French/English, targetText = Fula
-          for (var i = 0; i < userInputs.length; i++) {
-            final input = userInputs[i];
-            // Check if the user input matches the source language
-            final matchesSource =
-                _sourceLang == 'English'
-                    ? (input['sourceLang'] == 'English' ||
-                        input['sourceLang'] == null)
-                    : (input['sourceLang'] == 'French' ||
-                        input['sourceLang'] == null);
-
-            if (matchesSource) {
-              // Create a pseudo TranslationResult for user input
-              userInputResults.add(
-                TranslationResult(
-                  sourceText:
-                      input['sourceText'] as String, // Source language text
-                  targetText: input['targetText'] as String, // Fula text
-                  distance: 0.0, // User inputs get priority (distance 0)
-                  pointIndex:
-                      -(input['id'] as int), // Negative index for user inputs
-                ),
-              );
-            }
-          }
-          print(
-            'DEBUG: User input search found ${userInputResults.length} results',
-          );
-        }
 
         // Filter FTS results to match source language (English or French)
         // This ensures we only get results from the correct source language
@@ -738,7 +661,6 @@ class _TranslationScreenState extends State<TranslationScreen> {
           final exactMatch = exactKeywordMatch;
           ftsResults =
               [
-                ...userInputResults,
                 exactMatch,
                 ...filteredKeywordResults
                     .where((r) => r.pointIndex != exactMatch.pointIndex)
@@ -746,8 +668,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
               ].take(3).toList();
           hasExactFtsMatch = true;
         } else {
-          ftsResults =
-              [...userInputResults, ...filteredKeywordResults].take(3).toList();
+          ftsResults = filteredKeywordResults.take(3).toList();
           hasExactFtsMatch = false;
         }
 
@@ -908,24 +829,15 @@ class _TranslationScreenState extends State<TranslationScreen> {
     }
   }
 
-  /// Share all user inputs
-  Future<void> _shareUserInputs() async {
+  /// Share the current translation results
+  Future<void> _shareCurrentTranslation() async {
     final box = context.findRenderObject() as RenderBox?;
-    if (_userInputService == null) {
+    final text = _outputController.text.trim();
+    
+    if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Service non initialisé.'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
-    final count = _userInputService!.getUserInputCount();
-    if (count == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Aucune entrée utilisateur à partager.'),
+          content: Text('Aucun résultat à partager.'),
           duration: Duration(seconds: 2),
         ),
       );
@@ -933,68 +845,12 @@ class _TranslationScreenState extends State<TranslationScreen> {
     }
 
     try {
-      // Get all user inputs
-      final inputs = _userInputService!.getAllUserInputs();
-
-      // Prepare source and target texts
-      final sourceTexts = <String>[];
-      final targetTexts = <String>[];
-
-      for (final input in inputs) {
-        sourceTexts.add(input['sourceText'] as String);
-        targetTexts.add(input['targetText'] as String);
-      }
-
-      // Create files in application documents directory (like weebi pattern)
-      final storagePath = await StorageService.getStorageDirectoryPath();
-      final sourceFile = File(
-        '$storagePath${Platform.pathSeparator}source.txt',
-      );
-      final targetFile = File(
-        '$storagePath${Platform.pathSeparator}target.txt',
-      );
-
-      // Write source.txt (one translation per line with "- " prefix)
-      final sourceBuffer = StringBuffer();
-      for (final sourceText in sourceTexts) {
-        sourceBuffer.writeln(sourceText);
-      }
-      final sourceF = await compute(
-        _writeFile,
-        _FileWriteData(sourceFile.path, sourceBuffer.toString()),
-      );
-      final sourceFX = XFile(sourceF.path);
-
-      // Write target.txt (one translation per line with "- " prefix)
-      final targetBuffer = StringBuffer();
-      for (final targetText in targetTexts) {
-        targetBuffer.writeln(targetText);
-      }
-      final targetF = await compute(
-        _writeFile,
-        _FileWriteData(targetFile.path, targetBuffer.toString()),
-      );
-      final targetFX = XFile(targetF.path);
-
-      // Share both files as XFile objects (matching weebi pattern)
-      await Share.shareXFiles(
-        [sourceFX, targetFX],
-        text: 'Mes traductions Malinali ($count entrées)',
-        subject: 'Mes traductions Malinali ($count entrées)',
+      await Share.share(
+        'Traductions Malinali :\n\n$text',
+        subject: 'Traductions Malinali',
         sharePositionOrigin:
             box != null ? box.localToGlobal(Offset.zero) & box.size : null,
       );
-
-      // Clean up temporary files after a delay (to allow sharing to complete)
-      Future.delayed(const Duration(seconds: 5), () async {
-        try {
-          if (await sourceFile.exists()) await sourceFile.delete();
-          if (await targetFile.exists()) await targetFile.delete();
-        } catch (e) {
-          // Ignore cleanup errors
-          if (kDebugMode) print('Error cleaning up temp files: $e');
-        }
-      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1014,7 +870,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
     _inputFocusNode.dispose();
     _embeddingService?.dispose();
     _store?.close(); // Close database connection
-    _userInputService?.close(); // Close user input service
+    _syncService?.dispose(); // Close Turso sync service
     if (Platform.isAndroid) {
       _speechService?.dispose(); // Dispose speech recognition service
     }
@@ -1022,16 +878,24 @@ class _TranslationScreenState extends State<TranslationScreen> {
   }
 
   Future<void> _resetDatabase() async {
-    // Delete the database so it will be re-extracted from assets
+    // Delete both databases
     try {
-      final dbPath = await StorageService.getDatabasePath();
-      final dbFile = File(dbPath);
-      if (await dbFile.exists()) {
-        await dbFile.delete();
-        print('✅ Deleted database for reset');
+      final searchDbPath = await StorageService.getDatabasePath();
+      final syncDbPath = await StorageService.getSyncDatabasePath();
+      
+      final searchDbFile = File(searchDbPath);
+      if (await searchDbFile.exists()) {
+        await searchDbFile.delete();
+        print('✅ Deleted search database');
+      }
+
+      final syncDbFile = File(syncDbPath);
+      if (await syncDbFile.exists()) {
+        await syncDbFile.delete();
+        print('✅ Deleted sync database');
       }
     } catch (e) {
-      print('Warning: Could not delete database: $e');
+      print('Warning: Could not delete databases: $e');
     }
 
     // Navigate back to initial screen (which will re-extract and initialize)
@@ -1361,21 +1225,23 @@ class _TranslationScreenState extends State<TranslationScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 ListTile(
-                  leading: const Icon(Icons.save),
-                  title: const Text('Enregistrer une traduction'),
-                  subtitle: const Text('Ajouter une entrée source/target'),
-                  onTap: () => Navigator.of(context).pop('save'),
+                  leading: const Icon(Icons.sync),
+                  title: const Text('Synchroniser'),
+                  subtitle: const Text('Vérifier les mises à jour'),
+                  onTap: () => Navigator.of(context).pop('sync'),
                 ),
-                if (_userInputService != null &&
-                    _userInputService!.getUserInputCount() > 0)
-                  ListTile(
-                    leading: const Icon(Icons.share),
-                    title: const Text('Partager mes traductions'),
-                    subtitle: Text(
-                      '${_userInputService!.getUserInputCount()} entrées',
-                    ),
-                    onTap: () => Navigator.of(context).pop('share'),
-                  ),
+                ListTile(
+                  leading: const Icon(Icons.share),
+                  title: const Text('Partager ces résultats'),
+                  subtitle: const Text('Partager les traductions affichées'),
+                  onTap: () => Navigator.of(context).pop('share'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.mail),
+                  title: const Text('Contribuer'),
+                  subtitle: const Text('Nous contacter à hello@malinali.app'),
+                  onTap: () => Navigator.of(context).pop('contribute'),
+                ),
                 const Divider(),
                 ListTile(
                   leading: const Icon(Icons.storage),
@@ -1394,10 +1260,12 @@ class _TranslationScreenState extends State<TranslationScreen> {
 
     if (option == null) return;
 
-    if (option == 'save') {
-      await _showSaveTranslationDialog();
-    } else if (option == 'share') {
-      await _shareUserInputs();
+    if (option == 'share') {
+      await _shareCurrentTranslation();
+    } else if (option == 'sync') {
+      await _syncDatabase();
+    } else if (option == 'contribute') {
+      await _showContributeDialog();
     } else if (option == 'database' || option == 'files') {
       // Show warning dialog for database/file operations
       final confirmed = await showDialog<bool>(
@@ -1432,161 +1300,78 @@ class _TranslationScreenState extends State<TranslationScreen> {
     }
   }
 
-  /// Show dialog to save a translation (with form for source and target text)
-  Future<void> _showSaveTranslationDialog() async {
-    final sourceController = TextEditingController();
-    final targetController = TextEditingController();
-    bool sourceHasText = false;
-    bool targetHasText = false;
+  Future<void> _syncDatabase() async {
+    if (_syncService == null) return;
 
-    // Listen to text changes
-    void updateButtonState() {
-      final newSourceHasText = sourceController.text.trim().isNotEmpty;
-      final newTargetHasText = targetController.text.trim().isNotEmpty;
-      if (newSourceHasText != sourceHasText ||
-          newTargetHasText != targetHasText) {
-        sourceHasText = newSourceHasText;
-        targetHasText = newTargetHasText;
-        // Force rebuild of dialog
-        // Note: This is a simplified approach - in production you might want to use StatefulBuilder
-      }
-    }
-
-    sourceController.addListener(updateButtonState);
-    targetController.addListener(updateButtonState);
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder: (context, setState) {
-              // Update state when text changes
-              sourceController.addListener(() {
-                setState(() {});
-              });
-              targetController.addListener(() {
-                setState(() {});
-              });
-
-              final canSave =
-                  sourceController.text.trim().isNotEmpty &&
-                  targetController.text.trim().isNotEmpty;
-
-              return AlertDialog(
-                title: const Text('Enregistrer une traduction'),
-                content: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Source (${_getDisplayName(_sourceLang)})',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: sourceController,
-                        autofocus: true,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          hintText: 'Texte source...',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Cible (${_getDisplayName(_targetLang)})',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: targetController,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          hintText: 'Texte cible...',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('Annuler'),
-                  ),
-                  ElevatedButton(
-                    onPressed:
-                        canSave ? () => Navigator.of(context).pop(true) : null,
-                    child: const Text('Enregistrer'),
-                  ),
-                ],
-              );
-            },
-          ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Synchronisation en cours...'),
+        duration: Duration(seconds: 1),
+      ),
     );
 
-    sourceController.removeListener(updateButtonState);
-    targetController.removeListener(updateButtonState);
+    await _syncService!.sync();
 
-    if (result == true) {
-      final sourceText = sourceController.text.trim();
-      final targetText = targetController.text.trim();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Indexation locale des nouvelles données...'),
+          duration: Duration(seconds: 1),
+        ),
+      );
 
-      if (sourceText.isEmpty || targetText.isEmpty) {
-        return;
-      }
+      final indexer = LocalIndexerService(_embeddingService!);
+      await indexer.indexNewTranslations();
 
-      if (_userInputService == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Service non initialisé.'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-        return;
-      }
-
-      try {
-        await _userInputService!.addUserInput(
-          sourceText: sourceText,
-          targetText: targetText,
-          sourceLang: _sourceLang,
-          targetLang: _targetLang,
-        );
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Traduction enregistrée (${_userInputService!.getUserInputCount()} entrées au total)',
-              ),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Erreur lors de l\'enregistrement: $e'),
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Synchronisation terminée'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      // Reinitialize searcher to pick up new data
+      await _initializeSearcher();
     }
+  }
 
-    sourceController.dispose();
-    targetController.dispose();
+  /// Show dialog to contribute (pointing to email)
+  Future<void> _showContributeDialog() async {
+    await showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Contribuer'),
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Vous souhaitez enrichir Malinali avec de nouvelles traductions ?',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 16),
+                Text(
+                  'Contactez-nous par e-mail pour nous faire part de vos suggestions ou pour rejoindre l\'équipe de contributeurs.',
+                ),
+                SizedBox(height: 16),
+                SelectableText(
+                  'hello@malinali.app',
+                  style: TextStyle(
+                    color: Colors.blue,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Fermer'),
+              ),
+            ],
+          ),
+    );
   }
 
   Future<void> _selectDatabase() async {
@@ -1614,7 +1399,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
       }
 
       final selectedPath = result.files.single.path!;
-      final targetPath = await StorageService.getDatabasePath();
+      final targetPath = await StorageService.getSyncDatabasePath();
 
       // Close current searcher and store to release database lock
       _searcher = null;
@@ -1624,33 +1409,38 @@ class _TranslationScreenState extends State<TranslationScreen> {
       // Wait a bit to ensure file handles are released
       await Future.delayed(const Duration(milliseconds: 100));
 
-      // Delete existing database
-      final targetFile = File(targetPath);
-      if (await targetFile.exists()) {
-        await targetFile.delete();
+      // Delete existing databases
+      final searchDbPath = await StorageService.getDatabasePath();
+      final searchDbFile = File(searchDbPath);
+      if (await searchDbFile.exists()) {
+        await searchDbFile.delete();
       }
 
-      // Copy selected database
+      final syncDbFile = File(targetPath);
+      if (await syncDbFile.exists()) {
+        await syncDbFile.delete();
+      }
+
+      // Copy selected database to sync path
       await File(selectedPath).copy(targetPath);
       print('✅ Database copied to: $targetPath');
 
-      // Index the database semantically
+      // Index the database semantically (Local Indexer)
       setState(() {
-        _statusMessage = 'Indexation sémantique de la base de données...';
+        _statusMessage = 'Génération de l\'index de recherche local...';
         _progressCurrent = 0;
         _progressTotal = 0;
       });
 
-      await generateEmbeddingsFromDatabase(
-        dbPath: targetPath,
-        searcherId: 'fula',
+      final indexer = LocalIndexerService(_embeddingService!);
+      await indexer.indexNewTranslations(
         onProgress: (current, total) {
           if (mounted) {
             setState(() {
               _progressCurrent = current;
               _progressTotal = total;
               _statusMessage =
-                  'Indexation sémantique : $current / $total (${((current / total) * 100).toStringAsFixed(1)}%)';
+                  'Indexation locale : $current / $total (${((current / total) * 100).toStringAsFixed(1)}%)';
             });
           }
         },
@@ -1727,11 +1517,17 @@ class _TranslationScreenState extends State<TranslationScreen> {
       // Wait a bit to ensure file handles are released
       await Future.delayed(const Duration(milliseconds: 100));
 
-      // Delete existing database
-      final dbPath = await StorageService.getDatabasePath();
-      final dbFile = File(dbPath);
-      if (await dbFile.exists()) {
-        await dbFile.delete();
+      // Delete existing databases
+      final searchDbPath = await StorageService.getDatabasePath();
+      final searchDbFile = File(searchDbPath);
+      if (await searchDbFile.exists()) {
+        await searchDbFile.delete();
+      }
+
+      final syncDbPath = await StorageService.getSyncDatabasePath();
+      final syncDbFile = File(syncDbPath);
+      if (await syncDbFile.exists()) {
+        await syncDbFile.delete();
       }
 
       // Validate line counts
@@ -1767,26 +1563,43 @@ class _TranslationScreenState extends State<TranslationScreen> {
         return;
       }
 
-      // Generate embeddings from files
+      // Create the sync database from text files first
+      final db = sqlite3.open(syncDbPath);
+      db.execute('''
+        CREATE TABLE translations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          source_text TEXT NOT NULL,
+          target_text TEXT NOT NULL,
+          source_lang TEXT,
+          target_lang TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      ''');
+      
+      final stmt = db.prepare('INSERT INTO translations (source_text, target_text, source_lang, target_lang) VALUES (?, ?, ?, ?)');
+      for (var i = 0; i < sourceLines.length; i++) {
+        stmt.execute([sourceLines[i], targetLines[i], 'French', 'Fula']);
+      }
+      stmt.dispose();
+      db.dispose();
+
+      // Generate embeddings from the newly created sync DB (Local Indexer)
       setState(() {
         _statusMessage =
-            'Génération des embeddings (cela peut prendre un moment)...';
+            'Génération de l\'index de recherche local (cela peut prendre un moment)...';
         _progressCurrent = 0;
         _progressTotal = sourceLines.length;
       });
 
-      await generateEmbeddingsFromFiles(
-        sourceFilePath: sourcePath,
-        targetFilePath: targetPath,
-        dbPath: dbPath,
-        searcherId: 'fula',
+      final indexer = LocalIndexerService(_embeddingService!);
+      await indexer.indexNewTranslations(
         onProgress: (current, total) {
           if (mounted) {
             setState(() {
               _progressCurrent = current;
               _progressTotal = total;
               _statusMessage =
-                  'Génération des embeddings : $current / $total (${((current / total) * 100).toStringAsFixed(1)}%)';
+                  'Indexation locale : $current / $total (${((current / total) * 100).toStringAsFixed(1)}%)';
             });
           }
         },
@@ -1866,19 +1679,4 @@ class _ScoredResult {
     required this.inFts,
     required this.lengthPenalty,
   });
-}
-
-/// Helper class for file writing with compute
-class _FileWriteData {
-  final String path;
-  final String content;
-
-  _FileWriteData(this.path, this.content);
-}
-
-/// Helper function for writing files using compute (matching weebi pattern)
-Future<File> _writeFile(_FileWriteData data) async {
-  final file = File(data.path);
-  await file.writeAsString(data.content);
-  return file;
 }

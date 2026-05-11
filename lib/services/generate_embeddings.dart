@@ -142,7 +142,7 @@ Future<void> generateEmbeddingsFromDatabase({
 
   final List<Map<String, String>> rows = [];
   try {
-    // 1. Try to read from main 'translations' table
+    // Read from main 'translations' table
     try {
       final resultSet = db.select(
         'SELECT source_text, target_text FROM translations',
@@ -156,22 +156,6 @@ Future<void> generateEmbeddingsFromDatabase({
       print('✅ Loaded ${resultSet.length} pairs from "translations" table');
     } catch (e) {
       print('ℹ️ No "translations" table found or error reading it: $e');
-    }
-
-    // 2. Try to read from 'user_inputs' table
-    try {
-      final userResultSet = db.select(
-        'SELECT source_text, target_text FROM user_inputs',
-      );
-      for (final row in userResultSet) {
-        rows.add({
-          'source': row['source_text'] as String,
-          'target': row['target_text'] as String,
-        });
-      }
-      print('✅ Loaded ${userResultSet.length} pairs from "user_inputs" table');
-    } catch (e) {
-      print('ℹ️ No "user_inputs" table found or error reading it: $e');
     }
   } finally {
     db.dispose();

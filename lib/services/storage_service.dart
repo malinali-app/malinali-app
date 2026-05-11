@@ -17,7 +17,12 @@ class StorageService {
 
   static Future<String> getDatabasePath() async {
     final storagePath = await getStorageDirectoryPath();
-    return '$storagePath/malinali.db';
+    return '$storagePath/malinali_search.db';
+  }
+
+  static Future<String> getSyncDatabasePath() async {
+    final storagePath = await getStorageDirectoryPath();
+    return '$storagePath/malinali_sync.db';
   }
 
   static Future<String> getModelPath() async {

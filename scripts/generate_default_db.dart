@@ -89,4 +89,16 @@ void main() async {
   }
 
   print('\nDone! The app will now use this data when "Use Default Demo" is clicked.');
+  print('\n--- Best Practices for Frugal Syncing (Turso) ---');
+  print('1. DO NOT recreate the database from scratch for monthly updates.');
+  print('   Recreating the file changes all internal IDs and pages, forcing users to download the full DB.');
+  print('2. INCREMENTAL UPDATES: Append new translations to the existing "malinali.db".');
+  print('   Turso will then only sync the modified 4KB pages (the "delta").');
+  print('3. SEMANTIC INDEXING: If you use HybridFTSSearcher, it will update its index tables.');
+  print('   This is still more efficient than a full file replacement.');
+  print('\nTo push updates to Turso:');
+  print('1. Install Turso CLI: https://docs.turso.tech/cli');
+  print('2. Authenticate: turso auth login');
+  print('3. Push changes (incremental):');
+  print('   turso db shell malinali < incremental_updates.sql');
 }
