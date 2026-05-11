@@ -27,3 +27,6 @@
 # Keep JNA classes (used by Vosk)
 -keep class com.sun.jna.* { *; }
 -keepclassmembers class * extends com.sun.jna.* { public *; }
+
+# Ignore AWT classes referenced by JNA (not available on Android)
+-dontwarn java.awt.**
