@@ -1,24 +1,16 @@
 // ignore_for_file: implementation_imports
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
-import 'package:ml_algo/src/persistence/sqlite_neighbor_search_store.dart';
-import 'package:ml_algo/src/retrieval/hybrid_fts_searcher.dart';
-import 'package:ml_algo/src/retrieval/translation_result.dart';
-import 'package:ml_linalg/vector.dart';
-import 'package:malinali/services/embedding_service.dart';
-import 'package:malinali/services/query_stemmer.dart';
+import 'package:malinali/services/search_service.dart';
 // import 'package:malinali/setup_screen.dart';
-import 'package:malinali/services/generate_embeddings.dart';
 import 'package:malinali/services/speech_recognition_service.dart';
 import 'package:malinali/services/storage_service.dart';
 import 'package:malinali/services/turso_sync_service.dart';
-import 'package:malinali/services/local_indexer_service.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:sqlite3/sqlite3.dart';
+import 'package:sqlite3/sqlite3.dart' hide Row;
 import 'package:share_plus/share_plus.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
-import 'package:archive/archive.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -77,29 +69,87 @@ class _InitialScreenState extends State<InitialScreen> {
       }
 
       if (!exists) {
-        print('ℹ️  Sync database not found, extracting default demo database...');
-        // Load zipped database from assets
-        final ByteData zipData = await rootBundle.load('assets/malinali.db.zip');
-        final Uint8List zipBytes = zipData.buffer.asUint8List();
+        print('ℹ️  Sync database not found, populating from text files...');
 
-        final Archive archive = ZipDecoder().decodeBytes(zipBytes);
+        // Create the database schema
+        final db = sqlite3.open(syncDbPath);
+        db.execute('''
+        CREATE TABLE IF NOT EXISTS dictionary (
+            source_word TEXT PRIMARY KEY,
+            translated_word TEXT,
+            category TEXT,
+            source TEXT
+        );
+      ''');
+        db.execute('''
+        CREATE VIRTUAL TABLE IF NOT EXISTS documents USING fts5(
+            content, 
+            tokenize = 'unicode61'
+        );
+      ''');
 
-        // Get the database file from the archive
-        ArchiveFile? dbFileInArchive;
-        for (final file in archive) {
-          if (file.name == 'malinali.db' || file.name.endsWith('.db')) {
-            dbFileInArchive = file;
-            break;
-          }
+        // 1. Populate dictionary table
+        final srcDict = await rootBundle.loadString(
+          'assets/fra-ful/src_dictionary.txt',
+        );
+        final tgtDict = await rootBundle.loadString(
+          'assets/fra-ful/tgt_dictionary.txt',
+        );
+        final srcDictLines =
+            srcDict
+                .split('\n')
+                .map((l) => l.trim())
+                .where((l) => l.isNotEmpty)
+                .toList();
+        final tgtDictLines =
+            tgtDict
+                .split('\n')
+                .map((l) => l.trim())
+                .where((l) => l.isNotEmpty)
+                .toList();
+
+        final dictStmt = db.prepare(
+          'INSERT OR IGNORE INTO dictionary (source_word, translated_word) VALUES (?, ?)',
+        );
+        for (
+          var i = 0;
+          i < srcDictLines.length && i < tgtDictLines.length;
+          i++
+        ) {
+          dictStmt.execute([srcDictLines[i], tgtDictLines[i]]);
         }
+        dictStmt.dispose();
 
-        if (dbFileInArchive == null) {
-          throw Exception('Database file not found in archive');
+        // 2. Populate FTS table
+        final srcCombined = await rootBundle.loadString(
+          'assets/fra-ful/combined_src.txt',
+        );
+        final tgtCombined = await rootBundle.loadString(
+          'assets/fra-ful/combined_tgt.txt',
+        );
+        final srcLines =
+            srcCombined
+                .split('\n')
+                .map((l) => l.trim())
+                .where((l) => l.isNotEmpty)
+                .toList();
+        final tgtLines =
+            tgtCombined
+                .split('\n')
+                .map((l) => l.trim())
+                .where((l) => l.isNotEmpty)
+                .toList();
+
+        final ftsStmt = db.prepare(
+          'INSERT INTO documents (content) VALUES (?)',
+        );
+        for (var i = 0; i < srcLines.length && i < tgtLines.length; i++) {
+          ftsStmt.execute(['${srcLines[i]} → ${tgtLines[i]}']);
         }
+        ftsStmt.dispose();
 
-        // Write database to storage directory
-        await syncDbFile.writeAsBytes(dbFileInArchive.content as List<int>);
-        print('✅ Default sync database extracted successfully');
+        db.dispose();
+        print('✅ Default sync database populated successfully from text files');
       }
 
       if (mounted) {
@@ -137,10 +187,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
   late TextEditingController _inputController;
   late TextEditingController _outputController;
   late FocusNode _inputFocusNode;
-  HybridFTSSearcher? _searcher;
-  SQLiteNeighborSearchStore?
-  _store; // Keep reference to store to close it properly
-  EmbeddingService? _embeddingService;
+  SearchService? _searchService;
   TursoSyncService? _syncService;
   SpeechRecognitionService? _speechService;
   bool _isLoading = true;
@@ -153,8 +200,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
   bool _hasInputText =
       false; // Track if input has text for clear button visibility
   String? _statusMessage; // Status message for detailed loader
-  int _progressCurrent = 0;
-  int _progressTotal = 0;
+
+  List<SearchResult> _searchResults = [];
 
   // Helper to get display name for UI (keeps logic consistent with 'French'/'Fula')
   String _getDisplayName(String lang) {
@@ -205,7 +252,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
 
     _initializeSearcher();
 
-//  Error starting speech recognition: Exception: Speech recognition is only supported on Android. For other platforms, use the record package.
+    //  Error starting speech recognition: Exception: Speech recognition is only supported on Android. For other platforms, use the record package.
     if (Platform.isAndroid) {
       _initializeSpeechRecognition();
     }
@@ -300,85 +347,22 @@ class _TranslationScreenState extends State<TranslationScreen> {
 
   Future<void> _initializeSearcher() async {
     try {
-      // Initialize embedding service (ONNX model)
-      final embeddingService = EmbeddingService();
-      await embeddingService.initialize();
+      setState(() {
+        _statusMessage = 'Initialisation du service de recherche...';
+      });
 
-      final dbPath = await StorageService.getDatabasePath();
-      final dbFile = File(dbPath);
-
-      // Check if database exists
-      if (!await dbFile.exists()) {
-        setState(() {
-          _error = 'Database not found. Please set up the database first.';
-          _isLoading = false;
-        });
-        return;
-      }
-
-      // Close previous store if it exists
-      _store?.close();
-      _syncService?.dispose();
-
-      final store = SQLiteNeighborSearchStore(dbPath);
-      _store = store; // Keep reference
+      // Initialize search service
+      final searchService = SearchService();
+      await searchService.initialize();
 
       // Initialize Turso sync service
       _syncService = TursoSyncService();
       await _syncService!.initialize();
 
-      // Run local indexer to ensure search DB is up to date with sync DB
-      final indexer = LocalIndexerService(embeddingService);
       setState(() {
-        _statusMessage = 'Vérification de l\'index de recherche...';
-      });
-      await indexer.indexNewTranslations(
-        onProgress: (current, total) {
-          setState(() {
-            _progressCurrent = current;
-            _progressTotal = total;
-            _statusMessage = 'Indexation locale : $current / $total';
-          });
-        },
-      );
-
-      // Load existing searcher from database
-      HybridFTSSearcher? searcher;
-      try {
-        searcher = await HybridFTSSearcher.loadFromStore(store, 'fula');
-        print('✅ Loaded existing Fula searcher from database');
-      } catch (e) {
-        final errorMessage = e.toString();
-        // Check if this is a "searcher not found" error
-        if (errorMessage.contains('not found') ||
-            errorMessage.contains('Searcher with ID')) {
-          setState(() {
-            _error =
-                'Searcher with ID "fula" not found in database.\n\n'
-                'This usually happens when:\n'
-                '1. The database was created with a different model version\n'
-                '2. The database needs to be regenerated\n\n'
-                'Solution: Please regenerate the database using the Setup screen.\n'
-                'Go back and select "Use Default Demo" or select your text files again.';
-            _isLoading = false;
-          });
-        } else {
-          setState(() {
-            _error = 'Failed to load searcher from database: $e';
-            _isLoading = false;
-          });
-        }
-        return;
-      }
-
-      setState(() {
-        _searcher = searcher;
-        _embeddingService = embeddingService;
+        _searchService = searchService;
         _isLoading = false;
-        _statusMessage =
-            null; // Clear status message after successful initialization
-        _progressCurrent = 0;
-        _progressTotal = 0;
+        _statusMessage = null;
       });
     } catch (e) {
       setState(() {
@@ -389,7 +373,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
   }
 
   Future<void> _translate() async {
-    if (_searcher == null) return;
+    if (_searchService == null) return;
 
     final inputText = _inputController.text.trim();
     if (inputText.isEmpty) {
@@ -402,426 +386,15 @@ class _TranslationScreenState extends State<TranslationScreen> {
     });
 
     try {
-      // Generate embedding using ONNX model (only needed for semantic search)
-      // Skip for Fula → French/English since we only use keyword search
-      Vector? queryEmbedding;
-      if (_sourceLang != 'Fula') {
-        // Only generate embedding if we're doing semantic search
-        if (_embeddingService != null) {
-          // Use real ONNX model embedding
-          queryEmbedding = await _embeddingService!.generateEmbedding(
-            inputText,
-          );
-        } else {
-          // Fallback: simple hash-based embedding (shouldn't happen if initialized)
-          final embedding = List<double>.generate(384, (i) {
-            final hash = (inputText.hashCode + i * 1000).abs();
-            return (hash % 1000) / 1000.0;
-          });
-          queryEmbedding = Vector.fromList(embedding);
-        }
-      }
+      final results = await _searchService!.search(inputText);
 
-      // Handle different translation directions
-      // Database structure: sourceText = English/French (source), targetText = Fula (target)
-      List<TranslationResult> results;
-      List<TranslationResult> ftsResults = [];
-      List<TranslationResult> semanticResultsFinal = [];
-      bool hasExactFtsMatch = false;
-      // Track FTS indices to check if results have FTS backing (for distance threshold check)
-      Set<int> ftsIndices = <int>{};
-
-      if (_sourceLang == 'Fula') {
-        // Fula → English/French: Search in targetText (Fula), return sourceText (English/French)
-        // Skip semantic search since embeddings are stored for French (source), not Fula (target)
-        // Use keyword search only - FTS searches both sourceText and targetText
-        print(
-          'DEBUG: Fula → ${_targetLang}: Using keyword search only (no semantic search - embeddings are for French, not Fula)',
-        );
-
-        // Use keyword search - FTS will match Fula text in targetText column
-        final keywordResults = await _searcher!.searchByKeyword(
-          inputText,
-          k: 20,
-        );
-        print('DEBUG: Keyword search found ${keywordResults.length} results');
-
-        // Filter results to match target language (English or French)
-        // Results have: sourceText = French/English, targetText = Fula (what user searched for)
-        if (_targetLang == 'English') {
-          // Filter to show only English results (heuristic: no French characters)
-          results =
-              keywordResults.where((r) {
-                final text = r.sourceText.toLowerCase();
-                return !text.contains('é') &&
-                    !text.contains('è') &&
-                    !text.contains('ê') &&
-                    !text.contains('à') &&
-                    !text.contains('ç') &&
-                    !text.contains('ù');
-              }).toList();
-        } else if (_targetLang == 'French') {
-          // Filter to show only French results (heuristic: has French characters or common French words)
-          results =
-              keywordResults.where((r) {
-                final text = r.sourceText.toLowerCase();
-                return text.contains('é') ||
-                    text.contains('è') ||
-                    text.contains('ê') ||
-                    text.contains('à') ||
-                    text.contains('ç') ||
-                    text.contains('ù') ||
-                    text.contains(' le ') ||
-                    text.contains(' la ') ||
-                    text.contains(' de ');
-              }).toList();
-        } else {
-          // No filtering needed if target is Fula (shouldn't happen in this branch)
-          results = keywordResults;
-        }
-
-        // Look for exact match
-        TranslationResult? exactMatch;
-        final normalizedInput = inputText.trim().toLowerCase();
-        for (final r in results) {
-          final normalizedTarget = r.targetText.trim().toLowerCase();
-          if (normalizedTarget == normalizedInput) {
-            exactMatch = r;
-            break;
-          }
-        }
-
-        results = results.take(3).toList(); // Limit to 3 results
-        print('DEBUG: After language filtering: ${results.length} results');
-        for (var i = 0; i < results.length; i++) {
-          final r = results[i];
-          print('  ${i + 1}. "${r.targetText}" → "${r.sourceText}"');
-        }
-
-        // For Fula → English/French, we only use keyword search (no semantic search)
-        ftsResults = results;
-        semanticResultsFinal = [];
-        hasExactFtsMatch = exactMatch != null;
-      } else {
-        // English/French → Fula: Search in sourceText (English/French), return targetText (Fula)
-        // Stem query for FTS to handle word variations
-        // Choose stemming strategy based on the current source language.
-        // - English: use Porter/Snowball stemming
-        // - French: conservative normalization (no aggressive stemming)
-        final queryLanguage =
-            _sourceLang == 'English'
-                ? QueryLanguage.english
-                : QueryLanguage.french;
-        final stemmedQuery = QueryStemmer.stemQuery(inputText, queryLanguage);
-
-        // Always run both:
-        // - Keyword (FTS) search over sourceText
-        // - Semantic search over Fula embeddings
-        //
-        // Then merge results, favouring:
-        // - Strong semantic similarity
-        // - Candidates that also match FTS
-        // - Outputs whose length is closer to the input length
-
-        // 1) Keyword search (FTS)
-        final keywordResults = await _searcher!.searchByKeyword(
-          stemmedQuery,
-          k: 20,
-        );
-        print(
-          'DEBUG: Keyword search (stemmed: "$stemmedQuery") found ${keywordResults.length} results',
-        );
-
-        // Filter FTS results to match source language (English or French)
-        // This ensures we only get results from the correct source language
-        List<TranslationResult> filteredKeywordResults = keywordResults;
-        if (_sourceLang == 'English') {
-          // Filter to show only English results (heuristic: no French characters)
-          filteredKeywordResults =
-              keywordResults.where((r) {
-                final text = r.sourceText.toLowerCase();
-                return !text.contains('é') &&
-                    !text.contains('è') &&
-                    !text.contains('ê') &&
-                    !text.contains('à') &&
-                    !text.contains('ç') &&
-                    !text.contains('ù');
-              }).toList();
-        } else if (_sourceLang == 'French') {
-          // Filter to show only French results (heuristic: has French characters or common French words)
-          filteredKeywordResults =
-              keywordResults.where((r) {
-                final text = r.sourceText.toLowerCase();
-                return text.contains('é') ||
-                    text.contains('è') ||
-                    text.contains('ê') ||
-                    text.contains('à') ||
-                    text.contains('ç') ||
-                    text.contains('ù') ||
-                    text.contains(' le ') ||
-                    text.contains(' la ') ||
-                    text.contains(' de ');
-              }).toList();
-        }
-        print(
-          'DEBUG: After source language filtering: ${filteredKeywordResults.length} FTS results (from ${keywordResults.length})',
-        );
-
-        if (filteredKeywordResults.isNotEmpty) {
-          print('DEBUG: FTS matches (filtered by source language):');
-          for (var i = 0; i < filteredKeywordResults.length; i++) {
-            final r = filteredKeywordResults[i];
-            print(
-              '  ${i + 1}. "${r.sourceText}" → "${r.targetText}" (distance: ${r.distance.toStringAsFixed(4)})',
-            );
-          }
-        }
-
-        // Look for an exact phrase match in filtered FTS results (after simple normalization).
-        // If we find one, we will prefer it outright as the final answer.
-        TranslationResult? exactKeywordMatch;
-        final normalizedInput = inputText.trim().toLowerCase();
-        for (final r in filteredKeywordResults) {
-          final normalizedSource = r.sourceText.trim().toLowerCase();
-          if (normalizedSource == normalizedInput) {
-            exactKeywordMatch = r;
-            break;
-          }
-        }
-
-        // 2) Semantic search (always run, regardless of FTS outcome)
-        // queryEmbedding should not be null here since we're not in Fula → French/English branch
-        final semanticResults = await _searcher!.searchBySemantic(
-          queryEmbedding!,
-          k: 50,
-          searchRadius: 10,
-        );
-        print(
-          'DEBUG: Semantic search (embedding) found ${semanticResults.length} results',
-        );
-
-        // Filter semantic results to match source language (English or French)
-        // This ensures we only get results from the correct source language
-        // Made more lenient to avoid filtering out valid results
-        List<TranslationResult> filteredSemanticResults = semanticResults;
-        if (_sourceLang == 'English') {
-          // Filter to show only English results (heuristic: no French characters)
-          // More lenient: only exclude if it clearly has French characters
-          filteredSemanticResults =
-              semanticResults.where((r) {
-                final text = r.sourceText.toLowerCase();
-                // Exclude if it has French-specific characters
-                final hasFrenchChars =
-                    text.contains('é') ||
-                    text.contains('è') ||
-                    text.contains('ê') ||
-                    text.contains('à') ||
-                    text.contains('ç') ||
-                    text.contains('ù') ||
-                    text.contains('ô') ||
-                    text.contains('î') ||
-                    text.contains('û');
-                return !hasFrenchChars;
-              }).toList();
-        } else if (_sourceLang == 'French') {
-          // Filter to show only French results (heuristic: has French characters or common French words)
-          // More lenient: check for French words with or without spaces, and French characters
-          filteredSemanticResults =
-              semanticResults.where((r) {
-                final text = r.sourceText.toLowerCase();
-                // Check for French characters
-                final hasFrenchChars =
-                    text.contains('é') ||
-                    text.contains('è') ||
-                    text.contains('ê') ||
-                    text.contains('à') ||
-                    text.contains('ç') ||
-                    text.contains('ù') ||
-                    text.contains('ô') ||
-                    text.contains('î') ||
-                    text.contains('û');
-                // Check for common French words (with or without spaces, at word boundaries)
-                final hasFrenchWords = RegExp(
-                  r'\b(le|la|de|du|des|les|un|une|et|ou|est|sont|dans|pour|avec|sur|par|que|qui|quoi|comment|où|quand|pourquoi)\b',
-                ).hasMatch(text);
-                return hasFrenchChars || hasFrenchWords;
-              }).toList();
-        }
-        print(
-          'DEBUG: After source language filtering: ${filteredSemanticResults.length} semantic results (from ${semanticResults.length})',
-        );
-
-        // Store FTS indices for later checking if results have FTS backing
-        // Use filtered keyword results to only include results in the correct source language
-        ftsIndices = filteredKeywordResults.map((r) => r.pointIndex).toSet();
-
-        // Prepare FTS results (top 3)
-        // Add user inputs first (they have priority), then regular results
-        if (exactKeywordMatch != null) {
-          final exactMatch = exactKeywordMatch;
-          ftsResults =
-              [
-                exactMatch,
-                ...filteredKeywordResults
-                    .where((r) => r.pointIndex != exactMatch.pointIndex)
-                    .take(2),
-              ].take(3).toList();
-          hasExactFtsMatch = true;
-        } else {
-          ftsResults = filteredKeywordResults.take(3).toList();
-          hasExactFtsMatch = false;
-        }
-
-        // Prepare semantic results (top 3, re-ranked)
-        semanticResultsFinal = [];
-        if (filteredSemanticResults.isNotEmpty) {
-          // Compute input length (in tokens)
-          final inputTokens =
-              inputText
-                  .split(RegExp(r'\s+'))
-                  .where((w) => w.trim().isNotEmpty)
-                  .toList();
-          final inputLen = inputTokens.length;
-
-          const alpha = 0.3; // strength of length penalty
-          const ftsBoost = 0.7; // multiplier < 1.0 to reward FTS matches
-
-          // Build scored candidates
-          final scored = <_ScoredResult>[];
-          for (final r in filteredSemanticResults) {
-            final inFts = ftsIndices.contains(r.pointIndex);
-
-            // Length of target text (Fula output)
-            final targetText = r.targetText;
-            final outputTokens =
-                targetText
-                    .split(RegExp(r'\s+'))
-                    .where((w) => w.trim().isNotEmpty)
-                    .toList();
-            final outputLen = outputTokens.length;
-
-            final lenDiffRatio = (outputLen - inputLen).abs() / (inputLen + 1);
-            final lengthPenalty = 1 + alpha * lenDiffRatio;
-
-            var score = r.distance * lengthPenalty;
-            if (inFts) {
-              score *= ftsBoost;
-            }
-
-            scored.add(
-              _ScoredResult(
-                result: r,
-                score: score,
-                inFts: inFts,
-                lengthPenalty: lengthPenalty,
-              ),
-            );
-          }
-
-          // Sort by score (ascending: lower is better)
-          scored.sort((a, b) => a.score.compareTo(b.score));
-
-          // Take top-k semantic candidates after re-ranking
-          const k = 3;
-          semanticResultsFinal = scored.take(k).map((s) => s.result).toList();
-
-          print('DEBUG: Semantic results (top $k):');
-          for (var i = 0; i < semanticResultsFinal.length; i++) {
-            final r = semanticResultsFinal[i];
-            final inFts = ftsIndices.contains(r.pointIndex);
-            print(
-              '  ${i + 1}. "${r.sourceText}" → "${r.targetText}" '
-              '(distance: ${r.distance.toStringAsFixed(4)}, inFTS: $inFts)',
-            );
-          }
-        }
-
-        // Store results for display (we'll use both FTS and semantic separately)
-        results =
-            ftsResults; // Keep for backward compatibility, but we'll build split view
-
-        print(
-          'DEBUG: FTS results: ${ftsResults.length}, Semantic results: ${semanticResultsFinal.length}',
-        );
-      }
-
-      print(
-        'DEBUG: Final results: FTS=${ftsResults.length}, Semantic=${semanticResultsFinal.length}',
-      );
-
-      // Always show split view, even if both are empty (will show "No match" for both)
-      // Determine which field to display based on translation direction
-      // Database structure:
-      // - sourceText: contains English or French (source)
-      // - targetText: contains Fula (target)
-      //
-      // For display, we want to show: source phrase → target translation
-      // This allows users to assess if the translation is likely correct
-      String getSourceText(TranslationResult result) {
-        if (_direction == TranslationDirection.fulaToFrench) {
-          // When translating FROM Fula, the source phrase is in targetText (Fula)
-          return result.targetText;
-        } else {
-          // When translating FROM English/French, the source phrase is in sourceText
-          return result.sourceText;
-        }
-      }
-
-      String getTargetText(TranslationResult result) {
-        if (_direction == TranslationDirection.frenchToFula) {
-          // When translating TO Fula, the target is in targetText
-          return result.targetText;
-        } else {
-          // When translating TO English/French, the target is in sourceText
-          return result.sourceText;
-        }
-      }
-
-      // Build split view output: FTS on left, Semantic on right
-      final buffer = StringBuffer();
-
-      // Helper to format a result line
-      String formatResult(TranslationResult result, int index, bool isExact) {
-        final source = getSourceText(result);
-        final target = getTargetText(result);
-        // Debug: log what we're displaying
-        print(
-          'DEBUG formatResult: sourceLang=$_sourceLang, targetLang=$_targetLang, '
-          'result.sourceText="${result.sourceText.substring(0, result.sourceText.length > 50 ? 50 : result.sourceText.length)}...", '
-          'result.targetText="${result.targetText.substring(0, result.targetText.length > 50 ? 50 : result.targetText.length)}...", '
-          'display source="$source", display target="$target"',
-        );
-        final prefix = isExact ? '⭐ ' : '${index + 1}. ';
-        return '$prefix$source → $target';
-      }
-
-      // Build Semantic column (first - better results)
-      buffer.writeln('✨ Semantic');
-      if (semanticResultsFinal.isEmpty) {
-        buffer.writeln('Aucun résultat');
-      } else {
-        for (var i = 0; i < semanticResultsFinal.length; i++) {
-          buffer.writeln(formatResult(semanticResultsFinal[i], i, false));
-        }
-      }
-
-      // Build FTS column (second - keyword results)
-      buffer.writeln('');
-      buffer.writeln('🔤 Keyword');
-      if (ftsResults.isEmpty) {
-        buffer.writeln('Aucun résultat');
-      } else {
-        for (var i = 0; i < ftsResults.length; i++) {
-          final isExact = hasExactFtsMatch && i == 0;
-          buffer.writeln(formatResult(ftsResults[i], i, isExact));
-        }
-      }
-
-      _outputController.text = buffer.toString().trim();
-      buffer.writeln('');
-      buffer.writeln('');
+      setState(() {
+        _searchResults = results;
+      });
     } catch (e) {
-      _outputController.text = 'Error: $e';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() {
         _isTranslating = false;
@@ -833,7 +406,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
   Future<void> _shareCurrentTranslation() async {
     final box = context.findRenderObject() as RenderBox?;
     final text = _outputController.text.trim();
-    
+
     if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -868,8 +441,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
     _inputController.dispose();
     _outputController.dispose();
     _inputFocusNode.dispose();
-    _embeddingService?.dispose();
-    _store?.close(); // Close database connection
+    _searchService?.dispose();
     _syncService?.dispose(); // Close Turso sync service
     if (Platform.isAndroid) {
       _speechService?.dispose(); // Dispose speech recognition service
@@ -878,16 +450,9 @@ class _TranslationScreenState extends State<TranslationScreen> {
   }
 
   Future<void> _resetDatabase() async {
-    // Delete both databases
+    // Delete the sync database (replica)
     try {
-      final searchDbPath = await StorageService.getDatabasePath();
       final syncDbPath = await StorageService.getSyncDatabasePath();
-      
-      final searchDbFile = File(searchDbPath);
-      if (await searchDbFile.exists()) {
-        await searchDbFile.delete();
-        print('✅ Deleted search database');
-      }
 
       final syncDbFile = File(syncDbPath);
       if (await syncDbFile.exists()) {
@@ -895,7 +460,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
         print('✅ Deleted sync database');
       }
     } catch (e) {
-      print('Warning: Could not delete databases: $e');
+      print('Warning: Could not delete database: $e');
     }
 
     // Navigate back to initial screen (which will re-extract and initialize)
@@ -932,21 +497,6 @@ class _TranslationScreenState extends State<TranslationScreen> {
                         textAlign: TextAlign.center,
                         style: const TextStyle(fontSize: 14),
                       ),
-                      if (_progressTotal > 0) ...[
-                        const SizedBox(height: 12),
-                        LinearProgressIndicator(
-                          value: _progressCurrent / _progressTotal,
-                          backgroundColor: Colors.grey.shade300,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '$_progressCurrent / $_progressTotal',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -1188,21 +738,19 @@ class _TranslationScreenState extends State<TranslationScreen> {
                     ),
                   ),
                   Expanded(
-                    child: TextField(
-                      controller: _outputController,
-                      readOnly: true,
-                      maxLines: null,
-                      expands: true,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontFamily: 'NotoSans',
-                      ),
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.all(12.0),
-                        //hintText: 'La traduction apparaîtra ici...',
-                      ),
-                    ),
+                    child:
+                        _searchResults.isEmpty
+                            ? const SizedBox()
+                            : ListView.separated(
+                              padding: const EdgeInsets.all(12.0),
+                              itemCount: _searchResults.length,
+                              separatorBuilder:
+                                  (context, index) => const Divider(),
+                              itemBuilder: (context, index) {
+                                final result = _searchResults[index];
+                                return _SearchResultItem(result: result);
+                              },
+                            ),
                   ),
                 ],
               ),
@@ -1315,16 +863,6 @@ class _TranslationScreenState extends State<TranslationScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Indexation locale des nouvelles données...'),
-          duration: Duration(seconds: 1),
-        ),
-      );
-
-      final indexer = LocalIndexerService(_embeddingService!);
-      await indexer.indexNewTranslations();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
           content: Text('Synchronisation terminée'),
           duration: Duration(seconds: 2),
         ),
@@ -1380,15 +918,9 @@ class _TranslationScreenState extends State<TranslationScreen> {
         _isLoading = true;
         _error = null;
         _statusMessage = 'Copie de la base de données...';
-        _progressCurrent = 0;
-        _progressTotal = 0;
       });
 
-      final result = await FilePicker.platform.pickFiles(
-        //  yielded a bug
-        // FileType.custom
-        // allowedExtensions: ['db', 'sqlite'],
-      );
+      final result = await FilePicker.platform.pickFiles();
 
       if (result == null || result.files.single.path == null) {
         setState(() {
@@ -1401,20 +933,12 @@ class _TranslationScreenState extends State<TranslationScreen> {
       final selectedPath = result.files.single.path!;
       final targetPath = await StorageService.getSyncDatabasePath();
 
-      // Close current searcher and store to release database lock
-      _searcher = null;
-      _store?.close();
-      _store = null;
+      // Close current search service to release database lock
+      _searchService?.dispose();
+      _searchService = null;
 
       // Wait a bit to ensure file handles are released
       await Future.delayed(const Duration(milliseconds: 100));
-
-      // Delete existing databases
-      final searchDbPath = await StorageService.getDatabasePath();
-      final searchDbFile = File(searchDbPath);
-      if (await searchDbFile.exists()) {
-        await searchDbFile.delete();
-      }
 
       final syncDbFile = File(targetPath);
       if (await syncDbFile.exists()) {
@@ -1424,27 +948,6 @@ class _TranslationScreenState extends State<TranslationScreen> {
       // Copy selected database to sync path
       await File(selectedPath).copy(targetPath);
       print('✅ Database copied to: $targetPath');
-
-      // Index the database semantically (Local Indexer)
-      setState(() {
-        _statusMessage = 'Génération de l\'index de recherche local...';
-        _progressCurrent = 0;
-        _progressTotal = 0;
-      });
-
-      final indexer = LocalIndexerService(_embeddingService!);
-      await indexer.indexNewTranslations(
-        onProgress: (current, total) {
-          if (mounted) {
-            setState(() {
-              _progressCurrent = current;
-              _progressTotal = total;
-              _statusMessage =
-                  'Indexation locale : $current / $total (${((current / total) * 100).toStringAsFixed(1)}%)';
-            });
-          }
-        },
-      );
 
       setState(() {
         _statusMessage = 'Chargement de la base de données...';
@@ -1468,8 +971,6 @@ class _TranslationScreenState extends State<TranslationScreen> {
         _error = null;
         _statusMessage =
             'Veuillez sélectionner le fichier source (ex. Français)...';
-        _progressCurrent = 0;
-        _progressTotal = 0;
       });
 
       // Select source file
@@ -1509,20 +1010,12 @@ class _TranslationScreenState extends State<TranslationScreen> {
 
       final targetPath = targetResult.files.single.path!;
 
-      // Close current searcher and store to release database lock
-      _searcher = null;
-      _store?.close();
-      _store = null;
+      // Close current search service to release database lock
+      _searchService?.dispose();
+      _searchService = null;
 
       // Wait a bit to ensure file handles are released
       await Future.delayed(const Duration(milliseconds: 100));
-
-      // Delete existing databases
-      final searchDbPath = await StorageService.getDatabasePath();
-      final searchDbFile = File(searchDbPath);
-      if (await searchDbFile.exists()) {
-        await searchDbFile.delete();
-      }
 
       final syncDbPath = await StorageService.getSyncDatabasePath();
       final syncDbFile = File(syncDbPath);
@@ -1563,47 +1056,29 @@ class _TranslationScreenState extends State<TranslationScreen> {
         return;
       }
 
-      // Create the sync database from text files first
+      // Create the sync database from text files
       final db = sqlite3.open(syncDbPath);
       db.execute('''
-        CREATE TABLE translations (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          source_text TEXT NOT NULL,
-          target_text TEXT NOT NULL,
-          source_lang TEXT,
-          target_lang TEXT,
-          created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
+        CREATE TABLE IF NOT EXISTS dictionary (
+            source_word TEXT PRIMARY KEY,
+            translated_word TEXT,
+            category TEXT,
+            source TEXT
+        );
       ''');
-      
-      final stmt = db.prepare('INSERT INTO translations (source_text, target_text, source_lang, target_lang) VALUES (?, ?, ?, ?)');
+      db.execute('''
+        CREATE VIRTUAL TABLE IF NOT EXISTS documents USING fts5(
+            content, 
+            tokenize = 'unicode61'
+        );
+      ''');
+
+      final stmt = db.prepare('INSERT INTO documents (content) VALUES (?)');
       for (var i = 0; i < sourceLines.length; i++) {
-        stmt.execute([sourceLines[i], targetLines[i], 'French', 'Fula']);
+        stmt.execute(['${sourceLines[i]} → ${targetLines[i]}']);
       }
       stmt.dispose();
       db.dispose();
-
-      // Generate embeddings from the newly created sync DB (Local Indexer)
-      setState(() {
-        _statusMessage =
-            'Génération de l\'index de recherche local (cela peut prendre un moment)...';
-        _progressCurrent = 0;
-        _progressTotal = sourceLines.length;
-      });
-
-      final indexer = LocalIndexerService(_embeddingService!);
-      await indexer.indexNewTranslations(
-        onProgress: (current, total) {
-          if (mounted) {
-            setState(() {
-              _progressCurrent = current;
-              _progressTotal = total;
-              _statusMessage =
-                  'Indexation locale : $current / $total (${((current / total) * 100).toStringAsFixed(1)}%)';
-            });
-          }
-        },
-      );
 
       setState(() {
         _statusMessage = 'Chargement de la base de données...';
@@ -1623,6 +1098,107 @@ class _TranslationScreenState extends State<TranslationScreen> {
   }
 }
 
+class _SearchResultItem extends StatelessWidget {
+  final SearchResult result;
+
+  const _SearchResultItem({required this.result});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Target (Fula) - Primary
+          RichText(
+            text: TextSpan(
+              style: const TextStyle(
+                fontSize: 18,
+                color: Colors.black,
+                fontWeight: FontWeight.w500,
+                fontFamily: 'NotoSans',
+              ),
+              children: _getHighlightedSpans(
+                result.target,
+                result.matchedTerms,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          // Source (French) - Secondary/Context
+          Text(
+            result.source,
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey.shade600,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<TextSpan> _getHighlightedSpans(String text, List<String> terms) {
+    if (terms.isEmpty) return [TextSpan(text: text)];
+
+    List<TextSpan> spans = [];
+    String lowerText = text.toLowerCase();
+
+    // Sort terms by length descending to match longest terms first
+    final sortedTerms = List<String>.from(terms)
+      ..sort((a, b) => b.length.compareTo(a.length));
+
+    int lastMatchEnd = 0;
+
+    while (lastMatchEnd < text.length) {
+      int earliestMatchStart = -1;
+      String? bestTerm;
+
+      for (var term in sortedTerms) {
+        if (term.isEmpty) continue;
+        int index = lowerText.indexOf(term.toLowerCase(), lastMatchEnd);
+        if (index != -1 &&
+            (earliestMatchStart == -1 || index < earliestMatchStart)) {
+          earliestMatchStart = index;
+          bestTerm = term;
+        }
+      }
+
+      if (earliestMatchStart != -1 && bestTerm != null) {
+        // Add text before match
+        if (earliestMatchStart > lastMatchEnd) {
+          spans.add(
+            TextSpan(text: text.substring(lastMatchEnd, earliestMatchStart)),
+          );
+        }
+        // Add highlighted match
+        spans.add(
+          TextSpan(
+            text: text.substring(
+              earliestMatchStart,
+              earliestMatchStart + bestTerm.length,
+            ),
+            style: const TextStyle(
+              color: Colors.blue,
+              fontWeight: FontWeight.bold,
+              backgroundColor: Color(0xFFE3F2FD),
+            ),
+          ),
+        );
+        lastMatchEnd = earliestMatchStart + bestTerm.length;
+      } else {
+        // Add remaining text
+        spans.add(TextSpan(text: text.substring(lastMatchEnd)));
+        break;
+      }
+    }
+
+    return spans;
+  }
+}
+
 enum TranslationDirection { frenchToFula, fulaToFrench }
 
 class _LanguageDirectionSwitcher extends StatelessWidget {
@@ -1637,10 +1213,7 @@ class _LanguageDirectionSwitcher extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isFrenchToFula = direction == TranslationDirection.frenchToFula;
-    final label =
-        isFrenchToFula
-            ? 'Français → Pulaar'
-            : 'Pulaar → Français'; // french => fula
+    final label = isFrenchToFula ? 'Français → Pulaar' : 'Pulaar → Français';
 
     return Material(
       color: Colors.transparent,
@@ -1664,19 +1237,4 @@ class _LanguageDirectionSwitcher extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Internal helper for scoring and re-ranking translation results.
-class _ScoredResult {
-  final TranslationResult result;
-  final double score;
-  final bool inFts;
-  final double lengthPenalty;
-
-  const _ScoredResult({
-    required this.result,
-    required this.score,
-    required this.inFts,
-    required this.lengthPenalty,
-  });
 }

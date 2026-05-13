@@ -24,9 +24,4 @@ class StorageService {
     final storagePath = await getStorageDirectoryPath();
     return '$storagePath/malinali_sync.db';
   }
-
-  static Future<String> getModelPath() async {
-    final storagePath = await getStorageDirectoryPath();
-    return '$storagePath/all-MiniLM-L6-v2.onnx';
-  }
 }

@@ -51,7 +51,7 @@ class TursoSyncService {
   }
 
   void dispose() {
-    _client?.close();
+    _client?.dispose();
     _client = null;
     _isInitialized = false;
   }
