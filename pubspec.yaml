@@ -4,7 +4,7 @@ description: "A new Flutter project."
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.0+1
+version: 1.0.1+101
 
 environment:
   sdk: ^3.7.2 #3.10.1
@@ -21,14 +21,6 @@ dependencies:
 
   path_provider: ^2.1.1
   args: ^2.7.0
-  fonnx:
-    git:
-      url: https://github.com/malinali-app/fonnx # uses correct output name "last_hidden_state"
-      ref: 3d4d13a587b0ada9c23b1115ddd153d5e03afdaa
-  ml_algo:
-    git: 
-      url: https://github.com/malinali-app/ml_algo
-      ref: add70b8212cb1ffd70138742a1c215235304e9e5
 
   vosk_flutter: #^0.3.48 - missing the android namespace in the gradle
     git:
@@ -39,13 +31,10 @@ dependencies:
       url: https://github.com/weebi-com/flutter-permission-handler/
       ref: e4029c615a6e1fcb1ddfd7c66cf6f09324de3ab3
       path: permission_handler
-  ml_linalg: ^13.11.15
-  ml_dataframe: ^1.6.0
-  stemmer: any #^3.2.0
   file_picker: ^8.1.4
-  sqlite3_flutter_libs: ^0.5.18
-  archive: ^3.4.0
   share_plus: ^10.1.4
+  sqlite3: ^2.9.4
+  libsql_dart: ^0.8.0
 
 dev_dependencies:
   flutter_test:
@@ -72,11 +61,10 @@ flutter:
 
   # Assets
   assets:
-    - assets/models/all-MiniLM-L6-v2.onnx.zip
-    - assets/models/tokenizer.json
     - assets/malinali_logo.jpg
-    - assets/malinali.db.zip
     - assets/vosk-model-small-fr-0.22.zip
+    - assets/fra-ful/
+    - secrets.txt
 
   fonts:
     - family: NotoSans

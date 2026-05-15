@@ -17,11 +17,18 @@ class StorageService {
 
   static Future<String> getDatabasePath() async {
     final storagePath = await getStorageDirectoryPath();
-    return '$storagePath/malinali.db';
+    return '$storagePath/malinali_search.db';
   }
 
-  static Future<String> getModelPath() async {
+  /// libSQL embedded replica (Turso sync only — do not open with package:sqlite3).
+  static Future<String> getSyncDatabasePath() async {
     final storagePath = await getStorageDirectoryPath();
-    return '$storagePath/all-MiniLM-L6-v2.onnx';
+    return '$storagePath/malinali_sync.db';
+  }
+
+  /// Plain SQLite database used by search and FTS (package:sqlite3).
+  static Future<String> getAppDatabasePath() async {
+    final storagePath = await getStorageDirectoryPath();
+    return '$storagePath/malinali_app.db';
   }
 }

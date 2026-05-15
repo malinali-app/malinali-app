@@ -1,62 +1,31 @@
-# Malinali - Offline Translation App
+# Malinali
 
 ## Français
 
-Malinali est une application de traduction flutter qui fonctionne hors-ligne sur tous les OS, mobiles inclus.
-Elle combine recherche sémantique (vectorielle) & recherche par mots clés (full text search)
-La démo inclus x800 expressions pour tester la traduction du français => pulaar
+Malinali est une application Flutter de traduction hors ligne basée sur la recherche dans un dictionnaire local. Les entrées sont stockées dans SQLite (`dictionary` pour les lemmes, `phrases` pour les expressions et corpus). La recherche combine ces tables et un index FTS5 construit sur l’appareil.
 
-Si la qualité des résultats dépend du jeu de données, le système est bien moins efficace que les outils en ligne de MachineTranslation / LLM. Mais c'est une appli libre et gratuite qui permet même d'importer son propre jeu de donnée (dataset).
+Le dictionnaire est synchronisé depuis Turso en développement comme en production. L’index de recherche est régénéré localement lorsque le dictionnaire local ne correspond plus à l’index enregistré. Sans identifiants Turso, le mode debug peut encore charger un petit dictionnaire depuis les assets.
 
-Un outil pour découvrir/explorer le pulaar voire même d'autres langues dites "low-resources" pour lesquelles il y a peu d'offres.
+Pour éviter une synchronisation Turso à chaque redémarrage à chaud en développement, définir MALINALI_SKIP_AUTO_TURSO_SYNC à true au lancement. La synchronisation manuelle reste disponible dans les paramètres.
+
+L’application permet aussi d’importer un dictionnaire SQLite ou des paires de fichiers texte source et cible. Les résultats affichent la traduction proposée et le texte source correspondant.
+
+La démo cible le français vers le pulaar. La qualité dépend surtout du jeu de données. L’outil convient aux langues peu dotées, aux usages hors ligne et aux contextes où l’utilisateur vérifie les suggestions proposées.
 
 ## English
 
-Malinali is an offline-first Flutter app for translation using retrieval-based translation combining Full Text Search (FTS) and Semantic Search on any datasets.
+Malinali is an offline Flutter translation app built around local dictionary lookup. Translation entries live in SQLite (`dictionary` for lemmas, `phrases` for expressions and corpus). Search combines both tables with an FTS5 index built on the device.
 
-### Context
+The dictionary is synced from Turso in development and production. The search index is rebuilt locally when the on-device dictionary no longer matches the stored index metadata. Without Turso credentials, debug builds can still load a small dictionary from bundled assets.
 
-While advanced translation models give good results (e.g. [nllb](https://huggingface.co/flutter-painter/nllb-fra-fuf-v2)), they are too heavy to run locally and incompatible with mobile OS...
+To avoid a Turso sync on every hot restart during development, set MALINALI_SKIP_AUTO_TURSO_SYNC to true at launch. Manual sync remains available in settings.
 
-And while there are offline Machine Translations tools like OpenNMT, CTranslate2, or INMT-lite. To yield good results, they need a vast amount of data that is intrinsically not available for low-resource languages.
+The app also supports importing a SQLite dictionary or paired source and target text files. Results show the suggested translation and the matching source text.
 
-As a result Malinali takes a diffrent approach and rely on a **retrieval-based translation** rather than generative neural translation. 
+The demo focuses on French to Pulaar. Quality depends mainly on the dataset. The app suits low-resource languages, offline use, and workflows where the user reviews suggested matches.
 
-1. Semantic Search using embeddings/vector, based on
-    - a tiny embedder [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) that runs using [fonnx](https://github.com/Telosnex/fonnx)
-    - a [forked version](https://github.com/malinali-app/ml_algo) of [ml_algo](https://pub.dev/packages/ml_algo) that stores embeddings in SQLite and retrives the nearest using [RandomBinaryProjectionSearcher](https://pub.dev/documentation/ml_algo/latest/ml_algo/RandomBinaryProjectionSearcher-class.html)
-2. Full Text Search based on SQLite
+## load db
 
-Combining the two techniques allows users to compare the two results, often illustrating that the semantic yields better results.
-The app also displays the source text linked with the translation found, allowing users to assess if context matches and thus if the translation is relevant.
-
-![screenshot.png](screenshot.png)
-
-### Features
-This approach is **imperfect but pragmatic**:
-
-- **Works offline**: All data stored locally, no API calls
-- **Mobile-friendly**: Flutter app, runs smoothly on low-end devices
-- **User contributions**: Users can add their own translations (stored in SQLite with full-text search support)
-- **Share translations**: Export and share user-added translations as text files (source.txt and target.txt)
-
-**When to use Malinali:**
-
-- Low-resource languages with limited training data
-- Offline-first requirements
-- Privacy-sensitive applications
-- Resource-constrained environments
-- Users ready to review, evaluate suggestions, provided they are accurate
-- Domain-specific translations available for custom use (e.g., medical, legal, technical)
-
-### Demo Dataset
-
-French -> Fula dataset (20 000 lines) from [awesome_fula_nl_resources](https://github.com/flutter-painter/awesome_fula_nl_resources)
-
-### Future Improvements
-
-- Allow users to rename the languages display for source/target
-- Allow users to add additional language support
-- Allow users to use a wider range of embedding models
-  - Explore a French-Specific Embedding Models
-    - `sentence-camembert-base` or `dangvantuan/french-document-embedding`
+Install the Turso CLI once: https://docs.turso.tech/cli
+turso auth login
+turso db import "C:\path\to\your\malinali.db"
