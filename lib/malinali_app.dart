@@ -225,10 +225,9 @@ class _TranslationScreenState extends State<TranslationScreen> {
   bool _isInitializingSearcher = false;
   bool _isTranslating = false;
   bool _isListening = false; // Track if speech recognition is active
-  String _sourceLang = 'French';
-  String _targetLang = 'Fula'; // Default: French → Fula
+  static const String _sourceLang = 'French';
+  static const String _targetLang = 'Fula';
   String? _error;
-  TranslationDirection _direction = TranslationDirection.frenchToFula;
   bool _hasInputText =
       false; // Track if input has text for clear button visibility
   String? _statusMessage; // Status message for detailed loader
@@ -246,20 +245,6 @@ class _TranslationScreenState extends State<TranslationScreen> {
       default:
         return lang;
     }
-  }
-
-  void _toggleDirection() {
-    setState(() {
-      if (_direction == TranslationDirection.frenchToFula) {
-        _direction = TranslationDirection.fulaToFrench;
-        _sourceLang = 'Fula';
-        _targetLang = 'French';
-      } else {
-        _direction = TranslationDirection.frenchToFula;
-        _sourceLang = 'French';
-        _targetLang = 'Fula';
-      }
-    });
   }
 
   @override
@@ -467,10 +452,9 @@ class _TranslationScreenState extends State<TranslationScreen> {
     });
 
     try {
-      final lexicalMatches =
-          _direction == TranslationDirection.frenchToFula
-              ? await _searchService!.lookupLexicalTokens(inputText)
-              : <LexicalTokenMatch>[];
+      final lexicalMatches = await _searchService!.lookupLexicalTokens(
+        inputText,
+      );
       final results = await _searchService!.search(inputText);
 
       setState(() {
@@ -696,12 +680,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
             child: Row(
               children: [
-                Expanded(
-                  child: _LanguageDirectionSwitcher(
-                    direction: _direction,
-                    onToggle: _toggleDirection,
-                  ),
-                ),
+                const Expanded(child: _LanguageDirectionLabel()),
                 IconButton(
                   icon: const Icon(Icons.settings),
                   onPressed: _showSettingsDialog,
@@ -1691,40 +1670,22 @@ class _DataSourceDetailRow extends StatelessWidget {
   }
 }
 
-enum TranslationDirection { frenchToFula, fulaToFrench }
-
-class _LanguageDirectionSwitcher extends StatelessWidget {
-  const _LanguageDirectionSwitcher({
-    required this.direction,
-    required this.onToggle,
-  });
-
-  final TranslationDirection direction;
-  final VoidCallback onToggle;
+class _LanguageDirectionLabel extends StatelessWidget {
+  const _LanguageDirectionLabel();
 
   @override
   Widget build(BuildContext context) {
-    final isFrenchToFula = direction == TranslationDirection.frenchToFula;
-    final label = isFrenchToFula ? 'Français → Pulaar' : 'Pulaar → Français';
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onToggle,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
         borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.grey.shade700,
-            ),
-          ),
+      ),
+      child: Text(
+        'Français → Pulaar',
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: Colors.grey.shade700,
         ),
       ),
     );
