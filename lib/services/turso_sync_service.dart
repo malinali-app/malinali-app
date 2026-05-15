@@ -1,58 +1,301 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:libsql_dart/libsql_dart.dart';
-import 'package:malinali/services/storage_service.dart';
-import 'dart:async';
+import 'package:malinali/services/app_log.dart';
+import 'package:malinali/services/database_bootstrap.dart';
+import 'package:malinali/services/database_materializer.dart';
+import 'package:malinali/services/sync_database_access.dart';
+
+class TursoConfigurationException implements Exception {
+  final String message;
+
+  const TursoConfigurationException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+class TursoDownloadResult {
+  final RemoteContentsSummary remoteSummary;
+  final int materializedRows;
+
+  const TursoDownloadResult({
+    required this.remoteSummary,
+    required this.materializedRows,
+  });
+}
 
 class TursoSyncService {
-  static const String _syncUrl = 'TURSO_DATABASE_URL';
-  static const String _authToken = 'TURSO_AUTH_TOKEN';
+  static const String _unsetUrl = 'TURSO_DATABASE_URL';
+  static const String _unsetToken = 'TURSO_AUTH_TOKEN';
+  static const Duration _connectTimeout = Duration(seconds: 60);
 
-  LibsqlClient? _client;
-  bool _isInitialized = false;
+  static String _syncUrl = const String.fromEnvironment(
+    'TURSO_DATABASE_URL',
+    defaultValue: _unsetUrl,
+  );
+  static String _authToken = const String.fromEnvironment(
+    'TURSO_AUTH_TOKEN',
+    defaultValue: _unsetToken,
+  );
+  static bool _credentialsResolved = false;
 
-  LibsqlClient? get client => _client;
-  bool get isInitialized => _isInitialized;
+  static bool get isConfigured =>
+      _syncUrl.isNotEmpty &&
+      _authToken.isNotEmpty &&
+      _syncUrl != _unsetUrl &&
+      _authToken != _unsetToken;
 
-  Future<void> initialize() async {
-    if (_isInitialized) return;
+  static bool skipAutoTursoSync = bool.fromEnvironment(
+    'MALINALI_SKIP_AUTO_TURSO_SYNC',
+    defaultValue: false,
+  );
 
-    try {
-      final dbPath = await StorageService.getSyncDatabasePath();
-      
-      _client = LibsqlClient.replica(
-        dbPath,
-        syncUrl: _syncUrl,
-        authToken: _authToken,
-        syncIntervalSeconds: 0, // Disable automatic background sync (frugal)
-        readYourWrites: true,
+  static Future<void> ensureCredentialsLoaded({
+    bool isDevelopment = false,
+  }) async {
+    if (isDevelopment) {
+      final skipAutoSync = bool.fromEnvironment(
+        'MALINALI_SKIP_AUTO_TURSO_SYNC',
+        defaultValue: false,
       );
+      if (skipAutoSync) {
+        skipAutoTursoSync = true;
+      }
+    }
 
-      await _client!.connect();
-      _isInitialized = true;
-      print('✅ TursoSyncService initialized with libSQL replica');
-      
-      // Initial sync
-      await sync();
-    } catch (e) {
-      print('❌ Error initializing TursoSyncService: $e');
-      // We don't throw here to allow the app to work offline if sync fails
+    if (_credentialsResolved) {
+      return;
+    }
+
+    AppLog.info('Chargement des identifiants Turso...');
+
+    if (!isConfigured) {
+      for (final path in const [
+        'secrets.txt',
+        r'malinali-app\secrets.txt',
+        'malinali-app/secrets.txt',
+      ]) {
+        await _loadSecretsFromFile(File(path));
+        if (isConfigured) {
+          AppLog.info('secrets.txt trouvé: $path');
+          break;
+        }
+      }
+    }
+
+    if (!isConfigured) {
+      await _loadSecretsFromBundle();
+      if (isConfigured) {
+        AppLog.info('secrets.txt chargé depuis les assets');
+      }
+    }
+
+    _credentialsResolved = true;
+
+    if (isConfigured) {
+      AppLog.info('Turso configuré: ${configuredDatabaseHost ?? _syncUrl}');
+    } else {
+      AppLog.warn(
+        'Turso non configuré. Créez secrets.txt (URL libsql + token) à la racine du projet.',
+      );
     }
   }
 
-  Future<void> sync() async {
-    if (!_isInitialized || _client == null) return;
+  static Future<void> _loadSecretsFromFile(File file) async {
+    if (!await file.exists()) {
+      return;
+    }
+
+    _applySecrets(await file.readAsString());
+  }
+
+  static Future<void> _loadSecretsFromBundle() async {
+    try {
+      _applySecrets(await rootBundle.loadString('secrets.txt'));
+    } on FlutterError {
+      return;
+    } catch (_) {
+      return;
+    }
+  }
+
+  static void _applySecrets(String content) {
+    final lines =
+        content
+            .split('\n')
+            .map((line) => line.trim())
+            .where((line) => line.isNotEmpty && !line.startsWith('#'))
+            .toList();
+
+    if (lines.length < 2) {
+      return;
+    }
+
+    _syncUrl = lines[0].trim();
+    _authToken = lines[1].trim();
+  }
+
+  static String? get configuredDatabaseHost {
+    if (!isConfigured) {
+      return null;
+    }
+
+    final uri = Uri.tryParse(_syncUrl);
+    return uri?.host;
+  }
+
+  /// Downloads Turso tables over the network into a plain SQLite [appDbPath].
+  Future<TursoDownloadResult> downloadToAppDatabase(String appDbPath) async {
+    await ensureCredentialsLoaded();
+
+    if (!isConfigured) {
+      throw const TursoConfigurationException(
+        'Turso n\'est pas configuré. Ajoutez secrets.txt (ligne 1: URL, ligne 2: token).',
+      );
+    }
+
+    AppLog.info('Connexion à Turso...');
+    final client = LibsqlClient.remote(_syncUrl, authToken: _authToken);
+
+    await client.connect().timeout(
+      _connectTimeout,
+      onTimeout: () {
+        throw TursoConfigurationException(
+          'Délai dépassé en connexion à Turso ($_connectTimeout). '
+          'Vérifiez le réseau et secrets.txt.',
+        );
+      },
+    );
+    AppLog.info('Connecté à Turso');
 
     try {
-      print('🔄 Syncing with Turso...');
-      await _client!.sync();
-      print('✅ Turso sync completed');
-    } catch (e) {
-      print('⚠️ Turso sync failed: $e');
+      final remoteSummary = await _describeRemoteContents(client);
+      AppLog.info('Turso remote: $remoteSummary');
+
+      if (remoteSummary.totalRows == 0) {
+        AppLog.warn('Turso ne contient aucune table de traduction reconnue');
+      }
+
+      AppLog.info('Téléchargement vers $appDbPath ...');
+      final materializedRows = await DatabaseMaterializer.materializeFromLibsql(
+        client: client,
+        appDbPath: appDbPath,
+      );
+      await DatabaseBootstrap.ensureDataSources(appDbPath);
+
+      AppLog.info('Base locale: $materializedRows lignes copiées');
+
+      return TursoDownloadResult(
+        remoteSummary: remoteSummary,
+        materializedRows: materializedRows,
+      );
+    } finally {
+      client.dispose();
     }
   }
 
-  void dispose() {
-    _client?.dispose();
-    _client = null;
-    _isInitialized = false;
+  static Future<RemoteContentsSummary> _describeRemoteContents(
+    LibsqlClient client,
+  ) async {
+    final tables = <RemoteTableSummary>[];
+    var totalRows = 0;
+
+    final tableRows = await client.query('''
+      SELECT name FROM sqlite_master
+      WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+    ''');
+
+    AppLog.info('Tables Turso: ${tableRows.map((r) => r['name']).join(', ')}');
+
+    for (final table in tableRows) {
+      final tableName = table['name']?.toString();
+      if (tableName == null ||
+          tableName == 'documents' ||
+          tableName == 'search_index_meta') {
+        continue;
+      }
+
+      final columns = await client.query('PRAGMA table_info($tableName)');
+      final columnNames = columns
+          .map((column) => column['name']?.toString() ?? '')
+          .where((name) => name.isNotEmpty)
+          .toList();
+
+      final info = SyncDatabaseAccess.describeFromColumnNames(
+        tableName,
+        columnNames,
+      );
+      if (info == null) {
+        tables.add(
+          RemoteTableSummary(
+            name: tableName,
+            rowCount: 0,
+            columns: columnNames,
+            recognized: false,
+          ),
+        );
+        AppLog.warn('Table $tableName ignorée (colonnes: ${columnNames.join('/')})');
+        continue;
+      }
+
+      final countRows = await client.query(
+        'SELECT COUNT(*) AS count FROM ${info.tableName}',
+      );
+      final rowCount = countRows.isEmpty
+          ? 0
+          : SyncDatabaseAccess.parseSqlCount(countRows.first['count']);
+      totalRows += rowCount;
+      tables.add(
+        RemoteTableSummary(
+          name: tableName,
+          rowCount: rowCount,
+          columns: columnNames,
+          recognized: true,
+        ),
+      );
+    }
+
+    return RemoteContentsSummary(tables: tables, totalRows: totalRows);
+  }
+}
+
+class RemoteTableSummary {
+  final String name;
+  final int rowCount;
+  final List<String> columns;
+  final bool recognized;
+
+  const RemoteTableSummary({
+    required this.name,
+    required this.rowCount,
+    required this.columns,
+    required this.recognized,
+  });
+}
+
+class RemoteContentsSummary {
+  final List<RemoteTableSummary> tables;
+  final int totalRows;
+
+  const RemoteContentsSummary({
+    required this.tables,
+    required this.totalRows,
+  });
+
+  @override
+  String toString() {
+    if (tables.isEmpty) {
+      return 'aucune table utilisateur';
+    }
+
+    return tables
+        .map((table) {
+          final status = table.recognized ? 'ok' : 'colonnes non reconnues';
+          return '${table.name}(${table.rowCount}, $status: ${table.columns.join('/')})';
+        })
+        .join('; ');
   }
 }

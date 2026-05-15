@@ -64,6 +64,7 @@ flutter:
     - assets/malinali_logo.jpg
     - assets/vosk-model-small-fr-0.22.zip
     - assets/fra-ful/
+    - secrets.txt
 
   fonts:
     - family: NotoSans

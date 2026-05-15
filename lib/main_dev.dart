@@ -1,4 +1,3 @@
-// ignore_for_file: implementation_imports
 import 'package:flutter/material.dart';
 import 'package:malinali/malinali_app.dart';
 import 'package:malinali/services/turso_sync_service.dart';
