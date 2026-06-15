@@ -78,7 +78,10 @@ class DatabaseBootstrap {
     }
   }
 
-  static Future<bool> seedDictionaryFromBundledAssets(String dbPath) async {
+  static Future<bool> seedDictionaryFromBundledAssets(
+    String dbPath, {
+    int? maxRows,
+  }) async {
     try {
       final dictionaryTsv = await rootBundle.loadString(
         'assets/fra-ful/dictionary.tsv',
@@ -97,6 +100,7 @@ class DatabaseBootstrap {
           db,
           table: 'dictionary',
           tsv: dictionaryTsv,
+          maxRows: maxRows,
         );
 
         try {
@@ -107,6 +111,7 @@ class DatabaseBootstrap {
             db,
             table: 'phrases',
             tsv: phrasesTsv,
+            maxRows: maxRows != null ? (maxRows ~/ 2) : null,
           );
         } on FlutterError {
           // phrases.tsv optional for minimal dev bundles
@@ -151,10 +156,12 @@ class DatabaseBootstrap {
     Database db, {
     required String table,
     required String tsv,
+    int? maxRows,
   }) async {
     final stmt = db.prepare(
       'INSERT OR REPLACE INTO $table (source_word, translated_word, category, source) VALUES (?, ?, ?, ?)',
     );
+    var count = 0;
     for (final row in _parseTranslationTsv(tsv)) {
       stmt.execute([
         row.sourceWord,
@@ -162,6 +169,10 @@ class DatabaseBootstrap {
         row.category,
         row.source,
       ]);
+      count++;
+      if (maxRows != null && count >= maxRows) {
+        break;
+      }
     }
     stmt.dispose();
   }

@@ -134,8 +134,18 @@ class TursoSyncService {
       return;
     }
 
-    _syncUrl = lines[0].trim();
+    _syncUrl = _normalizeSyncUrl(lines[0].trim());
     _authToken = lines[1].trim();
+  }
+
+  static String _normalizeSyncUrl(String url) {
+    if (url.startsWith('libsql://') || url.startsWith('https://')) {
+      return url;
+    }
+    if (url.startsWith('http://')) {
+      return url.replaceFirst('http://', 'https://');
+    }
+    return 'libsql://$url';
   }
 
   static String? get configuredDatabaseHost {
@@ -157,21 +167,22 @@ class TursoSyncService {
       );
     }
 
-    AppLog.info('Connexion à Turso...');
+    final host = configuredDatabaseHost ?? _syncUrl;
+    AppLog.info('Connexion à Turso ($host)...');
     final client = LibsqlClient.remote(_syncUrl, authToken: _authToken);
 
-    await client.connect().timeout(
-      _connectTimeout,
-      onTimeout: () {
-        throw TursoConfigurationException(
-          'Délai dépassé en connexion à Turso ($_connectTimeout). '
-          'Vérifiez le réseau et secrets.txt.',
-        );
-      },
-    );
-    AppLog.info('Connecté à Turso');
-
     try {
+      await client.connect().timeout(
+        _connectTimeout,
+        onTimeout: () {
+          throw TursoConfigurationException(
+            'Délai dépassé en connexion à Turso ($_connectTimeout). '
+            'Vérifiez le réseau et secrets.txt.',
+          );
+        },
+      );
+      AppLog.info('Connecté à Turso');
+
       final remoteSummary = await _describeRemoteContents(client);
       AppLog.info('Turso remote: $remoteSummary');
 
@@ -192,9 +203,31 @@ class TursoSyncService {
         remoteSummary: remoteSummary,
         materializedRows: materializedRows,
       );
+    } on TursoConfigurationException {
+      rethrow;
+    } catch (error, stackTrace) {
+      AppLog.error('Échec connexion/sync Turso', error, stackTrace);
+      throw TursoConfigurationException(_describeTursoError(error));
     } finally {
       client.dispose();
     }
+  }
+
+  static String _describeTursoError(Object error) {
+    final message = error.toString();
+    if (message.contains('dns error') ||
+        message.contains('lookup address') ||
+        message.contains('No address associated with hostname')) {
+      final host = configuredDatabaseHost;
+      return 'Impossible de joindre Turso (DNS/réseau). '
+          'Vérifiez la connexion Internet et l\'URL dans secrets.txt'
+          '${host != null ? ' (hôte: $host)' : ''}.';
+    }
+    if (message.contains('PanicException')) {
+      return 'Erreur du client LibSQL lors de la connexion à Turso. '
+          'Vérifiez le réseau, l\'URL libsql://…turso.io et le token.';
+    }
+    return 'Erreur Turso: $message';
   }
 
   static Future<RemoteContentsSummary> _describeRemoteContents(
