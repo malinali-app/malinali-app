@@ -55,6 +55,19 @@ class _InitialScreenState extends State<InitialScreen> {
     _prepareLocalDatabase();
   }
 
+  Future<bool> _seedFromBundledAssets(String appDbPath, {int? maxRows}) async {
+    await DatabaseBootstrap.createEmptySchema(appDbPath);
+    final seeded = await DatabaseBootstrap.seedDictionaryFromBundledAssets(
+      appDbPath,
+      maxRows: maxRows,
+    );
+    if (seeded) {
+      await SearchIndexService.rebuild(appDbPath);
+      AppLog.info('Dictionnaire chargé depuis les assets');
+    }
+    return seeded;
+  }
+
   Future<void> _setStatus(String status) async {
     if (!mounted) {
       return;
@@ -84,51 +97,22 @@ class _InitialScreenState extends State<InitialScreen> {
 
       final hasLocalData = hasLocalDb &&
           await SearchIndexService.databaseHasTranslationData(appDbPath);
-      final shouldDownloadFromTurso =
-          TursoSyncService.isConfigured &&
-          !TursoSyncService.skipAutoTursoSync &&
-          (!hasLocalData || !await SearchIndexService.databaseHasSearchIndex(appDbPath));
 
-      AppLog.info(
-        'hasLocalData=$hasLocalData shouldDownloadFromTurso=$shouldDownloadFromTurso',
-      );
-
-      if (shouldDownloadFromTurso) {
-        await _setStatus('Synchronisation (2min environ)...');
-        final downloadResult = await TursoSyncService().downloadToAppDatabase(
-          appDbPath,
-        );
-        if (downloadResult.materializedRows == 0 &&
-            downloadResult.remoteSummary.totalRows == 0) {
-          throw Exception(
-            'Turso connecté mais aucune donnée trouvée: ${downloadResult.remoteSummary}',
-          );
-        }
-        await _setStatus('Construction de l\'index de recherche...');
-        await SearchIndexService.rebuild(appDbPath);
-      } else if (!hasLocalDb && !TursoSyncService.isConfigured) {
-        await _setStatus('Chargement du dictionnaire local...');
+      // We no longer force a heavy sync on first run if it's slow.
+      // We just ensure the schema exists and move to the main screen.
+      if (!hasLocalDb) {
+        await _setStatus('Initialisation de la base de données...');
         await DatabaseBootstrap.createEmptySchema(appDbPath);
-        if (kDebugMode) {
-          final seeded = await DatabaseBootstrap.seedDictionaryFromBundledAssets(
-            appDbPath,
-          );
-          if (seeded) {
-            await SearchIndexService.rebuild(appDbPath);
-            AppLog.info('Dictionnaire chargé depuis les assets');
-          }
+        
+        // Seed a tiny bit so the app isn't totally empty on first run
+        if (!TursoSyncService.isConfigured) {
+          await _seedFromBundledAssets(appDbPath, maxRows: 100);
         }
-      } else if (hasLocalData) {
-        await _setStatus('Vérification de l\'index...');
-        await SearchIndexService.rebuildIfNeeded(appDbPath);
       }
 
-      if (!await SearchIndexService.databaseHasTranslationData(appDbPath)) {
-        throw Exception(
-          TursoSyncService.isConfigured
-              ? 'Aucune donnée locale après synchronisation.'
-              : 'Aucune donnée locale. Configurez Turso (secrets.txt) ou utilisez le mode debug.',
-        );
+      if (hasLocalData) {
+        await _setStatus('Vérification de l\'index...');
+        await SearchIndexService.rebuildIfNeeded(appDbPath);
       }
 
       await DatabaseBootstrap.ensureDataSources(appDbPath);
@@ -225,6 +209,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
   bool _isInitializingSearcher = false;
   bool _isTranslating = false;
   bool _isListening = false; // Track if speech recognition is active
+  bool _isDatabaseEmpty = false; // Track if the database has no translation data
   static const String _sourceLang = 'French';
   static const String _targetLang = 'Fula';
   String? _error;
@@ -400,22 +385,15 @@ class _TranslationScreenState extends State<TranslationScreen> {
         await DatabaseBootstrap.ensureDataSources(appDbPath);
       }
 
-      if (!await SearchIndexService.databaseHasTranslationData(appDbPath)) {
-        final dbSummary = await SearchIndexService.describeTranslationData(
-          appDbPath,
-        );
-        throw Exception('Base locale vide: $dbSummary');
-      }
-
-      if (!await SearchIndexService.databaseHasSearchIndex(appDbPath)) {
-        throw Exception('Index FTS manquant après initialisation.');
-      }
+      final hasData = await SearchIndexService.databaseHasTranslationData(appDbPath);
+      final hasIndex = await SearchIndexService.databaseHasSearchIndex(appDbPath);
 
       final searchService = SearchService();
       await searchService.initialize();
 
       setState(() {
         _searchService = searchService;
+        _isDatabaseEmpty = !hasData || !hasIndex;
         _isLoading = false;
         _isInitializingSearcher = false;
         _statusMessage = null;
@@ -883,6 +861,47 @@ class _TranslationScreenState extends State<TranslationScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    if (_isDatabaseEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.cloud_download_outlined,
+                size: 64,
+                color: Colors.blue.shade200,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Le dictionnaire est vide',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Synchronisez pour télécharger les données de traduction.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: _isTranslating ? null : _syncDatabase,
+                icon: const Icon(Icons.sync),
+                label: const Text('Synchroniser maintenant'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (!_hasTranslationResults) {
       return const SizedBox.expand();
     }
@@ -1049,16 +1068,49 @@ class _TranslationScreenState extends State<TranslationScreen> {
   }
 
   Future<void> _syncDatabase() async {
-    if (mounted) {
+    if (!TursoSyncService.isConfigured) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Synchronisation en cours...'),
-          duration: Duration(seconds: 1),
+          content: Text(
+            'Turso n\'est pas configuré. Ajoutez vos identifiants dans secrets.txt.',
+          ),
         ),
       );
+      return;
     }
 
-    await _initializeSearcher(requireTursoSync: TursoSyncService.isConfigured);
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => const PopScope(
+            canPop: false,
+            child: AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 24),
+                  Text('Synchronisation du dictionnaire...'),
+                  SizedBox(height: 8),
+                  Text(
+                    'Cela peut prendre jusqu\'à 2 minutes.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ),
+    );
+
+    try {
+      await _initializeSearcher(requireTursoSync: true);
+    } finally {
+      if (mounted) {
+        Navigator.of(context).pop(); // Close loading dialog
+      }
+    }
 
     if (!mounted) return;
 
@@ -1069,7 +1121,7 @@ class _TranslationScreenState extends State<TranslationScreen> {
               ? 'Synchronisation terminée'
               : 'Synchronisation échouée : $_error',
         ),
-        duration: const Duration(seconds: 2),
+        duration: const Duration(seconds: 3),
       ),
     );
   }
