@@ -6,6 +6,7 @@ import 'package:libsql_dart/libsql_dart.dart';
 import 'package:malinali/services/app_log.dart';
 import 'package:malinali/services/database_bootstrap.dart';
 import 'package:malinali/services/database_materializer.dart';
+import 'package:malinali/services/search_index_service.dart';
 import 'package:malinali/services/sync_database_access.dart';
 
 class TursoConfigurationException implements Exception {
@@ -158,7 +159,10 @@ class TursoSyncService {
   }
 
   /// Downloads Turso tables over the network into a plain SQLite [appDbPath].
-  Future<TursoDownloadResult> downloadToAppDatabase(String appDbPath) async {
+  Future<TursoDownloadResult> downloadToAppDatabase(
+    String appDbPath, {
+    void Function(int processed, int total)? onProgress,
+  }) async {
     await ensureCredentialsLoaded();
 
     if (!isConfigured) {
@@ -194,6 +198,7 @@ class TursoSyncService {
       final materializedRows = await DatabaseMaterializer.materializeFromLibsql(
         client: client,
         appDbPath: appDbPath,
+        onProgress: onProgress,
       );
       await DatabaseBootstrap.ensureDataSources(appDbPath);
 

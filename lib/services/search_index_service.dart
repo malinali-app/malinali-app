@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:malinali/services/database_bootstrap.dart';
 import 'package:malinali/services/sync_database_access.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -121,7 +122,7 @@ class SearchIndexService {
       return;
     }
 
-    await rebuild(dbPath);
+    await compute(rebuild, dbPath);
   }
 
   static Future<void> rebuild(String dbPath) async {
@@ -150,18 +151,25 @@ class SearchIndexService {
       }
 
       final stmt = db.prepare('INSERT INTO documents (content) VALUES (?)');
-      for (final table in translationTables) {
-        final rows = db.select(
-          'SELECT ${table.sourceColumn} AS source_word, '
-          '${table.targetColumn} AS translated_word '
-          'FROM ${table.tableName} '
-          'ORDER BY ${table.sourceColumn}',
-        );
-        for (final row in rows) {
-          stmt.execute([
-            '${row['source_word']} → ${row['translated_word']}',
-          ]);
+      db.execute('BEGIN TRANSACTION');
+      try {
+        for (final table in translationTables) {
+          final rows = db.select(
+            'SELECT ${table.sourceColumn} AS source_word, '
+            '${table.targetColumn} AS translated_word '
+            'FROM ${table.tableName} '
+            'ORDER BY ${table.sourceColumn}',
+          );
+          for (final row in rows) {
+            stmt.execute([
+              '${row['source_word']} → ${row['translated_word']}',
+            ]);
+          }
         }
+        db.execute('COMMIT');
+      } catch (e) {
+        db.execute('ROLLBACK');
+        rethrow;
       }
       stmt.dispose();
 

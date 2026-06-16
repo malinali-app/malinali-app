@@ -9,6 +9,8 @@ class DatabaseMaterializer {
   static Future<int> materializeFromLibsql({
     required LibsqlClient client,
     required String appDbPath,
+    int batchSize = 500,
+    void Function(int processed, int total)? onProgress,
   }) async {
     await ReplicaStorage.deleteReplicaArtifacts(appDbPath);
 
@@ -19,12 +21,15 @@ class DatabaseMaterializer {
       db.execute(DatabaseBootstrap.dataSourcesTableSql);
       db.execute(DatabaseBootstrap.documentsFtsSql);
 
-      var totalRows = 0;
+      var totalRowsProcessed = 0;
       final tableRows = await client.query('''
         SELECT name FROM sqlite_master
         WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
       ''');
 
+      // 1. Calculer le nombre total de lignes à copier pour le progrès
+      var grandTotal = 0;
+      final tablesToCopy = <String>[];
       for (final table in tableRows) {
         final tableName = table['name']?.toString();
         if (tableName == null ||
@@ -32,22 +37,50 @@ class DatabaseMaterializer {
             tableName == 'search_index_meta') {
           continue;
         }
+        tablesToCopy.add(tableName);
+        final countRes = await client.query('SELECT COUNT(*) as count FROM $tableName');
+        grandTotal += (countRes.first['count'] as num).toInt();
+      }
 
+      AppLog.info('Total de lignes à synchroniser: $grandTotal');
+
+      for (final tableName in tablesToCopy) {
         if (tableName == 'data_sources') {
-          AppLog.info('Copie table data_sources...');
-          final rows = await client.query('SELECT * FROM data_sources');
+          AppLog.info('Copie table data_sources (pagination)...');
+          final countRes = await client.query('SELECT COUNT(*) as count FROM data_sources');
+          final tableTotal = (countRes.first['count'] as num).toInt();
+          var tableProcessed = 0;
+
           final stmt = db.prepare(
             'INSERT OR REPLACE INTO data_sources (name, author, year, organization, url) '
             'VALUES (?, ?, ?, ?, ?)',
           );
-          for (final row in rows) {
-            stmt.execute([
-              row['name']?.toString() ?? '',
-              row['author']?.toString() ?? '',
-              row['year']?.toString() ?? '',
-              row['organization']?.toString() ?? '',
-              row['url']?.toString() ?? '',
-            ]);
+
+          while (tableProcessed < tableTotal) {
+            final rows = await client.query(
+              'SELECT * FROM data_sources LIMIT $batchSize OFFSET $tableProcessed',
+            );
+            if (rows.isEmpty) break;
+
+            db.execute('BEGIN TRANSACTION');
+            try {
+              for (final row in rows) {
+                stmt.execute([
+                  row['name']?.toString() ?? '',
+                  row['author']?.toString() ?? '',
+                  row['year']?.toString() ?? '',
+                  row['organization']?.toString() ?? '',
+                  row['url']?.toString() ?? '',
+                ]);
+                tableProcessed++;
+                totalRowsProcessed++;
+              }
+              db.execute('COMMIT');
+            } catch (e) {
+              db.execute('ROLLBACK');
+              rethrow;
+            }
+            onProgress?.call(totalRowsProcessed, grandTotal);
           }
           stmt.dispose();
           continue;
@@ -81,29 +114,46 @@ class DatabaseMaterializer {
           selectColumns.add('source AS provenance');
         }
 
-        AppLog.info('Copie ${info.tableName} → $targetTable...');
-        final rows = await client.query(
-          'SELECT ${selectColumns.join(', ')} FROM ${info.tableName}',
-        );
-        AppLog.info('${rows.length} lignes depuis ${info.tableName}');
+        AppLog.info('Copie ${info.tableName} → $targetTable (pagination)...');
+        final countRes = await client.query('SELECT COUNT(*) as count FROM ${info.tableName}');
+        final tableTotal = (countRes.first['count'] as num).toInt();
+        var tableProcessed = 0;
 
         final stmt = db.prepare(
           'INSERT OR REPLACE INTO $targetTable '
           '(source_word, translated_word, category, source) VALUES (?, ?, ?, ?)',
         );
-        for (final row in rows) {
-          stmt.execute([
-            row['source_word']?.toString() ?? '',
-            row['translated_word']?.toString() ?? '',
-            row['category']?.toString() ?? '',
-            row['provenance']?.toString() ?? '',
-          ]);
-          totalRows++;
+
+        while (tableProcessed < tableTotal) {
+          final rows = await client.query(
+            'SELECT ${selectColumns.join(', ')} FROM ${info.tableName} '
+            'LIMIT $batchSize OFFSET $tableProcessed',
+          );
+          if (rows.isEmpty) break;
+
+          db.execute('BEGIN TRANSACTION');
+          try {
+            for (final row in rows) {
+              stmt.execute([
+                row['source_word']?.toString() ?? '',
+                row['translated_word']?.toString() ?? '',
+                row['category']?.toString() ?? '',
+                row['provenance']?.toString() ?? '',
+              ]);
+              tableProcessed++;
+              totalRowsProcessed++;
+            }
+            db.execute('COMMIT');
+          } catch (e) {
+            db.execute('ROLLBACK');
+            rethrow;
+          }
+          onProgress?.call(totalRowsProcessed, grandTotal);
         }
         stmt.dispose();
       }
 
-      return totalRows;
+      return totalRowsProcessed;
     } finally {
       db.dispose();
     }

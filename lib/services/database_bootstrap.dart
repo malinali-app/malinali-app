@@ -36,7 +36,7 @@ class DatabaseBootstrap {
   static const String documentsFtsSql = '''
     CREATE VIRTUAL TABLE IF NOT EXISTS documents USING fts5(
         content,
-        tokenize = 'unicode61'
+        tokenize = "unicode61 tokenchars \"'\""
     );
   ''';
 
