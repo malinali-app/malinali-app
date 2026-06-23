@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:malinali/services/storage_service.dart';
 import 'package:malinali/services/sync_database_access.dart';
 import 'package:malinali/services/turso_sync_service.dart';
@@ -268,12 +269,18 @@ class SearchService {
       final processedWord = _stripContraction(word);
       if (!_isMeaningfulWord(word)) continue;
 
+      // Escape double quotes for FTS5 syntax
+      final escapedWord = processedWord.replaceAll('"', '""');
+
       if (expansions.containsKey(processedWord)) {
         final translations = expansions[processedWord]!;
-        final group = ['"$processedWord"', ...translations.map((t) => '"$t"')];
+        final group = [
+          '"$escapedWord"',
+          ...translations.map((t) => '"${t.replaceAll('"', '""')}"')
+        ];
         expandedTerms.add('(${group.join(' OR ')})');
       } else {
-        expandedTerms.add('"$processedWord"');
+        expandedTerms.add('"$escapedWord"');
       }
     }
 
@@ -283,9 +290,13 @@ class SearchService {
           .where((word) => word.length > 1 && !_stopWords.contains(word))
           .toList();
       if (meaningfulWords.isEmpty) {
-        return '"${words.join(' ')}"';
+        // Fallback: escape and wrap the whole thing
+        final fallback = words.join(' ').replaceAll('"', '""');
+        return '"$fallback"';
       }
-      return meaningfulWords.map((word) => '"$word"').join(' AND ');
+      return meaningfulWords
+          .map((word) => '"${word.replaceAll('"', '""')}"')
+          .join(' AND ');
     }
 
     return expandedTerms.join(' AND ');
@@ -303,24 +314,32 @@ class SearchService {
         .toSet()
         .toList();
 
-    final results = _db!.select(
-      'SELECT content, rank FROM documents WHERE documents MATCH ? ORDER BY rank LIMIT ?',
-      [ftsQuery, _maxResults],
-    );
-
-    return results.map((row) {
-      final content = row['content'].toString();
-      final parts = content.split(' → ');
-      final source = parts[0];
-      final target = parts.length > 1 ? parts[1] : '';
-
-      return _enrichPhraseResult(
-        source: source,
-        target: target,
-        rank: double.tryParse(row['rank'].toString()),
-        matchedTerms: allFulaTerms,
+    try {
+      final results = _db!.select(
+        'SELECT content, rank FROM documents WHERE documents MATCH ? ORDER BY rank LIMIT ?',
+        [ftsQuery, _maxResults],
       );
-    }).toList();
+
+      return results.map((row) {
+        final content = row['content'].toString();
+        final parts = content.split(' → ');
+        final source = parts[0];
+        final target = parts.length > 1 ? parts[1] : '';
+
+        return _enrichPhraseResult(
+          source: source,
+          target: target,
+          rank: double.tryParse(row['rank'].toString()),
+          matchedTerms: allFulaTerms,
+        );
+      }).toList();
+    } on SqliteException catch (e) {
+      // If FTS query fails (e.g. syntax error), return empty or log it
+      if (kDebugMode) {
+        print('FTS search error for query "$ftsQuery": $e');
+      }
+      return [];
+    }
   }
 
   SearchResult _enrichPhraseResult({

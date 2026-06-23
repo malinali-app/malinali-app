@@ -348,7 +348,10 @@ class _TranslationScreenState extends State<TranslationScreen> {
     }
   }
 
-  Future<void> _initializeSearcher({bool requireTursoSync = false}) async {
+  Future<void> _initializeSearcher({
+    bool requireTursoSync = false,
+    void Function(int processed, int total)? onProgress,
+  }) async {
     try {
       setState(() {
         _error = null;
@@ -373,12 +376,14 @@ class _TranslationScreenState extends State<TranslationScreen> {
       if (requireTursoSync && TursoSyncService.isConfigured) {
         final downloadResult = await TursoSyncService().downloadToAppDatabase(
           appDbPath,
+          onProgress: onProgress,
         );
         AppLog.info(
           'Sync manuelle: ${downloadResult.materializedRows} lignes, '
           '${await SearchIndexService.describeTranslationData(appDbPath)}',
         );
-        await SearchIndexService.rebuild(appDbPath);
+        // Indexing is now handled in a background isolate via compute() inside rebuildIfNeeded/rebuild
+        await SearchIndexService.rebuildIfNeeded(appDbPath, force: true);
         await DatabaseBootstrap.ensureDataSources(appDbPath);
       } else {
         await SearchIndexService.rebuildIfNeeded(appDbPath);
@@ -667,9 +672,9 @@ class _TranslationScreenState extends State<TranslationScreen> {
               ],
             ),
           ),
-          // Input editor (20% of space)
-          Expanded(
-            flex: 2,
+          // Input editor
+          SizedBox(
+            height: 160,
             child: Container(
               width: double.infinity,
               margin: const EdgeInsets.all(8.0),
@@ -821,9 +826,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
             ),
           ),
           const SizedBox(height: 4.0),
-          // Output editor (read-only, 80% of space)
+          // Output editor (read-only)
           Expanded(
-            flex: 6,
             child: Container(
               width: double.infinity,
               margin: const EdgeInsets.all(8.0),
@@ -1079,37 +1083,70 @@ class _TranslationScreenState extends State<TranslationScreen> {
       return;
     }
 
-    // Show loading dialog
+    // Show loading dialog with progress
+    final progressNotifier = ValueNotifier<(int, int)>((0, 0));
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder:
-          (context) => const PopScope(
+          (context) => PopScope(
             canPop: false,
-            child: AlertDialog(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 24),
-                  Text('Synchronisation du dictionnaire...'),
-                  SizedBox(height: 8),
-                  Text(
-                    'Cela peut prendre jusqu\'à 2 minutes.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+            child: ValueListenableBuilder<(int, int)>(
+              valueListenable: progressNotifier,
+              builder: (context, progress, child) {
+                final processed = progress.$1;
+                final total = progress.$2;
+                return AlertDialog(
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 24),
+                      const Text('Synchronisation du dictionnaire...'),
+                      if (total > 0) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          '$processed / $total lignes',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        LinearProgressIndicator(
+                          value: processed / total,
+                          backgroundColor: Colors.grey[200],
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                            Colors.blue,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Cela peut prendre jusqu\'à 2 minutes.',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                );
+              },
             ),
           ),
     );
 
     try {
-      await _initializeSearcher(requireTursoSync: true);
+      await _initializeSearcher(
+        requireTursoSync: true,
+        onProgress: (processed, total) {
+          progressNotifier.value = (processed, total);
+        },
+      );
     } finally {
       if (mounted) {
         Navigator.of(context).pop(); // Close loading dialog
       }
+      progressNotifier.dispose();
     }
 
     if (!mounted) return;

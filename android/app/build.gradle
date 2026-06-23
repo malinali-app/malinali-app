@@ -18,7 +18,8 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace "app.malinali.l10n"
     compileSdk flutter.compileSdkVersion
-    ndkVersion "27.0.12077973"
+    // Overrides flutter.ndkVersion (r26) — NDK r28+ required for 16 KB page size
+    ndkVersion "29.0.13113456"
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

@@ -4,7 +4,7 @@ description: "A new Flutter project."
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.3+103
+version: 1.0.7+107
 
 environment:
   sdk: ^3.7.2 #3.10.1
@@ -22,10 +22,10 @@ dependencies:
   path_provider: ^2.1.1
   args: ^2.7.0
 
-  vosk_flutter: #^0.3.48 - missing the android namespace in the gradle
+  vosk_flutter:
     git:
       url: https://github.com/malinali-app/vosk-flutter
-      ref: 7e1b2b98be6c6aebe4c17ac82d0eb076e9e28cd7
+      ref: bd5f53e
   permission_handler: #^12.0.0 #above missing windows header file makes it buggy ^11.3.1
     git:
       url: https://github.com/weebi-com/flutter-permission-handler/
