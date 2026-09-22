@@ -1,0 +1,5 @@
+# torch is already installed in WSL (cu121). Do not pip-install a CPU build over it.
+transformers==4.46.3
+sentencepiece
+sacrebleu
+accelerate

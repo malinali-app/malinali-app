@@ -72,5 +72,8 @@ assets/malinali.db
 /assets/fra-ful
 /secrets.txt
 /tools
+training/fr-pul/.venv/
+training/fr-pul/data/
+training/fr-pul/models/
 BUILDME.md
 android/.kotlin/
