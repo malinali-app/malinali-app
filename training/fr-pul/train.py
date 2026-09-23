@@ -8,6 +8,7 @@ os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 os.environ.setdefault("USE_TF", "0")
 
 import argparse
+import sys
 from pathlib import Path
 
 import torch
@@ -19,8 +20,13 @@ from transformers import (
     Seq2SeqTrainingArguments,
 )
 
-BASE_MODEL = "Helsinki-NLP/opus-mt-fr-ha"
 HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+
+from labels import load_jsonl, select_rows
+
+BASE_MODEL = "Helsinki-NLP/opus-mt-fr-ha"
 DATA = HERE / "data"
 OUT = HERE / "models" / "fr-pul"
 
@@ -33,6 +39,34 @@ def default_base() -> str:
 
 # Hausa Boko already uses ɓ ɗ ƴ. Pulaar also needs ŋ, ɲ, and the capitals.
 REQUIRED_TARGET_CHARS = ("ɓ", "ɗ", "ƴ", "ŋ", "ɲ", "ñ", "Ɓ", "Ɗ", "Ƴ", "Ŋ", "Ɲ", "Ñ")
+
+
+def read_rows(split: str) -> list[dict[str, object]]:
+    jsonl = DATA / f"{split}.jsonl"
+    if jsonl.is_file():
+        return load_jsonl(jsonl)
+    return [
+        {"fr": source, "pul": target, "primary": "street", "labels": ["street"]}
+        for source, target in read_pairs(split)
+    ]
+
+
+def as_pairs(rows: list[dict[str, object]]) -> list[tuple[str, str]]:
+    return [(str(row["fr"]), str(row["pul"])) for row in rows]
+
+
+def parse_exclude(text: str) -> set[str]:
+    return {part.strip() for part in text.split(",") if part.strip()}
+
+
+def parse_upsample(text: str) -> dict[str, int]:
+    weights: dict[str, int] = {}
+    for part in text.split(","):
+        if not part.strip():
+            continue
+        name, _, value = part.partition("=")
+        weights[name.strip()] = int(value or 1)
+    return weights
 
 
 def read_pairs(split: str) -> list[tuple[str, str]]:
@@ -131,26 +165,62 @@ class PairDataset(torch.utils.data.Dataset):
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--epochs", type=float, default=4)
+    parser.add_argument("--epochs", type=float, default=2)
     parser.add_argument("--batch", type=int, default=8)
-    parser.add_argument("--lr", type=float, default=2e-5)
-    parser.add_argument("--max-length", type=int, default=256)
+    parser.add_argument("--lr", type=float, default=1e-5)
+    parser.add_argument("--max-length", type=int, default=128)
     parser.add_argument("--max-steps", type=int, default=-1)
     parser.add_argument(
         "--base",
         default="",
         help="Checkpoint to continue from. Defaults to models/fr-pul if present.",
     )
+    parser.add_argument(
+        "--exclude",
+        default="scripture,ui,covid",
+        help="Comma-separated labels to drop from train and eval.",
+    )
+    parser.add_argument(
+        "--upsample",
+        default="street=3",
+        help="Comma-separated primary=copies, e.g. street=3.",
+    )
+    parser.add_argument(
+        "--glossary-keep",
+        type=float,
+        default=0.25,
+        help="Fraction of glossary rows to keep (stable hash).",
+    )
+    parser.add_argument(
+        "--eval-label",
+        default="street",
+        help="Primary label for the eval split. Empty = same filters as train.",
+    )
     args = parser.parse_args()
 
     if not torch.cuda.is_available():
         raise SystemExit("CUDA is not visible. Run this inside WSL on the RTX 4070.")
 
-    train_pairs = read_pairs("train")
-    dev_pairs = read_pairs("dev")
+    train_rows = select_rows(
+        read_rows("train"),
+        exclude=parse_exclude(args.exclude),
+        upsample=parse_upsample(args.upsample),
+        glossary_keep=args.glossary_keep,
+    )
+    eval_rows = select_rows(
+        read_rows("dev"),
+        exclude=parse_exclude(args.exclude),
+        upsample={},
+        glossary_keep=1.0,
+        eval_primary=args.eval_label or None,
+    )
+    train_pairs = as_pairs(train_rows)
+    dev_pairs = as_pairs(eval_rows)
+    if not train_pairs or not dev_pairs:
+        raise SystemExit("Label filters left an empty train or eval split.")
     base = args.base or default_base()
     print(
-        f"train {len(train_pairs)}  dev {len(dev_pairs)}  "
+        f"train {len(train_pairs)}  eval {len(dev_pairs)} ({args.eval_label or 'filtered'})  "
         f"gpu {torch.cuda.get_device_name(0)}  base {base}"
     )
 

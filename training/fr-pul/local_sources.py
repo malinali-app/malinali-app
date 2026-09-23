@@ -7,8 +7,6 @@ from pathlib import Path
 
 from bitext import add_pair, clean, find_snapshot, load_json, looks_pulaar
 
-COVID_MARKERS = ("covid", "covid-19", "convid")
-
 
 def split_pulaar_variants(*chunks: object) -> list[str]:
     seen: set[str] = set()
@@ -22,14 +20,9 @@ def split_pulaar_variants(*chunks: object) -> list[str]:
     return variants
 
 
-def is_covid(*parts: object) -> bool:
-    haystack = " ".join(str(part or "") for part in parts).casefold()
-    return any(marker in haystack for marker in COVID_MARKERS)
-
-
 def ingest_arprim_dictionary(
     training_root: Path,
-    pairs: dict[tuple[str, str], str],
+    pairs: dict[tuple[str, str], dict[str, str]],
     stats: Counter[str],
 ) -> None:
     path = find_snapshot(
@@ -59,7 +52,7 @@ def ingest_arprim_dictionary(
 
 def ingest_arprim_corpus(
     training_root: Path,
-    pairs: dict[tuple[str, str], str],
+    pairs: dict[tuple[str, str], dict[str, str]],
     stats: Counter[str],
 ) -> None:
     path = find_snapshot(
@@ -73,15 +66,19 @@ def ingest_arprim_corpus(
         if not isinstance(row, dict):
             stats[f"{origin}:dropped"] += 1
             continue
-        if is_covid(row.get("t"), row.get("s"), row.get("f")):
-            stats[f"{origin}:covid"] += 1
-            continue
-        add_pair(pairs, row.get("f"), row.get("p"), origin, stats)
+        add_pair(
+            pairs,
+            row.get("f"),
+            row.get("p"),
+            origin,
+            stats,
+            extra={"theme": row.get("t"), "source_doc": row.get("s")},
+        )
 
 
 def ingest_open_data(
     training_root: Path,
-    pairs: dict[tuple[str, str], str],
+    pairs: dict[tuple[str, str], dict[str, str]],
     stats: Counter[str],
 ) -> None:
     path = training_root / "pulaar_french_parallel_corpus.json"
@@ -107,7 +104,7 @@ def ingest_open_data(
 
 def ingest_local_sources(
     training_root: Path,
-    pairs: dict[tuple[str, str], str],
+    pairs: dict[tuple[str, str], dict[str, str]],
     stats: Counter[str],
 ) -> None:
     ingest_arprim_dictionary(training_root, pairs, stats)

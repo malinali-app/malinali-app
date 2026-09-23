@@ -128,7 +128,7 @@ def pick_column(columns: list[str], keys: tuple[str, ...], role: str) -> str | N
 
 
 def ingest_turso(
-    pairs: dict[tuple[str, str], str],
+    pairs: dict[tuple[str, str], dict[str, str]],
     stats: Counter[str],
 ) -> None:
     base, token = load_secrets()
@@ -186,7 +186,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    pairs: dict[tuple[str, str], str] = {}
+    pairs: dict[tuple[str, str], dict[str, str]] = {}
     stats: Counter[str] = Counter()
     if not args.local_only:
         ingest_turso(pairs, stats)
