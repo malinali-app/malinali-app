@@ -23,6 +23,14 @@ BASE_MODEL = "Helsinki-NLP/opus-mt-fr-ha"
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
 OUT = HERE / "models" / "fr-pul"
+
+
+def default_base() -> str:
+    if (OUT / "config.json").exists():
+        return str(OUT)
+    return BASE_MODEL
+
+
 # Hausa Boko already uses ɓ ɗ ƴ. Pulaar also needs ŋ, ɲ, and the capitals.
 REQUIRED_TARGET_CHARS = ("ɓ", "ɗ", "ƴ", "ŋ", "ɲ", "ñ", "Ɓ", "Ɗ", "Ƴ", "Ŋ", "Ɲ", "Ñ")
 
@@ -126,8 +134,13 @@ def main() -> None:
     parser.add_argument("--epochs", type=float, default=4)
     parser.add_argument("--batch", type=int, default=8)
     parser.add_argument("--lr", type=float, default=2e-5)
-    parser.add_argument("--max-length", type=int, default=128)
+    parser.add_argument("--max-length", type=int, default=256)
     parser.add_argument("--max-steps", type=int, default=-1)
+    parser.add_argument(
+        "--base",
+        default="",
+        help="Checkpoint to continue from. Defaults to models/fr-pul if present.",
+    )
     args = parser.parse_args()
 
     if not torch.cuda.is_available():
@@ -135,10 +148,14 @@ def main() -> None:
 
     train_pairs = read_pairs("train")
     dev_pairs = read_pairs("dev")
-    print(f"train {len(train_pairs)}  dev {len(dev_pairs)}  gpu {torch.cuda.get_device_name(0)}")
+    base = args.base or default_base()
+    print(
+        f"train {len(train_pairs)}  dev {len(dev_pairs)}  "
+        f"gpu {torch.cuda.get_device_name(0)}  base {base}"
+    )
 
-    tokenizer = MarianTokenizer.from_pretrained(BASE_MODEL)
-    model = MarianMTModel.from_pretrained(BASE_MODEL)
+    tokenizer = MarianTokenizer.from_pretrained(base)
+    model = MarianMTModel.from_pretrained(base)
     ensure_letters(tokenizer, model)
 
     collator = DataCollatorForSeq2Seq(tokenizer, model=model, padding=True)

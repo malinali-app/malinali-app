@@ -77,3 +77,5 @@ training/fr-pul/data/
 training/fr-pul/models/
 BUILDME.md
 android/.kotlin/
+/training/datasets--ARPRIM--Pulaar_Dictionary
+/training/datasets--ARPRIM--pulaar_fulfulde

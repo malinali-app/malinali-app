@@ -1,21 +1,28 @@
-"""Pull French–Pulaar pairs from Turso into a stable train/dev/test split.
+"""Pull French–Pulaar pairs from Turso and merge local ARPRIM / Open-Data sources.
 
 Reads secrets.txt (line 1 URL, line 2 token). Does not print the token.
 """
 
 from __future__ import annotations
 
-import hashlib
+import argparse
 import json
-import unicodedata
+import sys
 import urllib.error
 import urllib.request
 from collections import Counter
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-OUT = Path(__file__).resolve().parent / "data"
-PROBE_CHARS = "ɓɗŋɲƴñƁƊŊƝƳÑ"
+HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+
+from bitext import add_pair, write_splits
+from local_sources import ingest_local_sources
+
+ROOT = HERE.parents[1]
+OUT = HERE / "data"
+TRAINING = HERE.parent
 SOURCE_KEYS = (
     "source_word",
     "french",
@@ -120,27 +127,10 @@ def pick_column(columns: list[str], keys: tuple[str, ...], role: str) -> str | N
     return None
 
 
-def clean(text: object) -> str:
-    value = unicodedata.normalize("NFC", str(text or "")).strip()
-    return " ".join(value.split())
-
-
-def keep_pair(source: str, target: str) -> bool:
-    if not source or not target or source.casefold() == target.casefold():
-        return False
-    if len(source) > 400 or len(target) > 400:
-        return False
-    longer = max(len(source), len(target))
-    shorter = min(len(source), len(target))
-    return longer <= shorter * 8 + 20
-
-
-def bucket(source: str, target: str) -> int:
-    digest = hashlib.sha256(f"{source}\t{target}".encode()).digest()
-    return int.from_bytes(digest[:4], "big") % 100
-
-
-def main() -> None:
+def ingest_turso(
+    pairs: dict[tuple[str, str], str],
+    stats: Counter[str],
+) -> None:
     base, token = load_secrets()
     host = base.removeprefix("https://")
     print(f"Turso host: {host}")
@@ -156,7 +146,6 @@ def main() -> None:
     ]
     print("Tables:", ", ".join(tables) or "(none)")
 
-    pairs: dict[tuple[str, str], str] = {}
     for table in tables:
         if table in {"documents", "search_index_meta", "data_sources"}:
             continue
@@ -183,47 +172,29 @@ def main() -> None:
             if not page:
                 break
             for row in page:
-                source, target = clean(row[0]), clean(row[1])
-                if keep_pair(source, target):
-                    pairs[(source, target)] = table
+                add_pair(pairs, row[0], row[1], f"turso:{table}", stats)
             offset += PAGE
             print(f"  read {min(offset, total)}/{total}")
 
-    splits = {"train": [], "dev": [], "test": []}
-    char_counts: Counter[str] = Counter()
-    sentence_counts = Counter()
-    for (source, target), table in sorted(pairs.items()):
-        slot = bucket(source, target)
-        name = "test" if slot < 5 else "dev" if slot < 10 else "train"
-        splits[name].append((source, target))
-        for char in PROBE_CHARS:
-            char_counts[char] += target.count(char) + source.count(char)
-        if len(source.split()) >= 4:
-            sentence_counts[name] += 1
 
-    OUT.mkdir(parents=True, exist_ok=True)
-    for name, rows in splits.items():
-        (OUT / f"{name}.fr").write_text(
-            "\n".join(source for source, _ in rows) + ("\n" if rows else ""),
-            encoding="utf-8",
-        )
-        (OUT / f"{name}.pul").write_text(
-            "\n".join(target for _, target in rows) + ("\n" if rows else ""),
-            encoding="utf-8",
-        )
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Skip Turso and rebuild the split from local sources only.",
+    )
+    args = parser.parse_args()
 
-    report = [
-        f"unique pairs: {len(pairs)}",
-        f"train: {len(splits['train'])}",
-        f"dev: {len(splits['dev'])}",
-        f"test: {len(splits['test'])}",
-        "full sentences (source has 4+ words): "
-        + ", ".join(f"{name}={sentence_counts[name]}" for name in splits),
-        "special letter counts (both sides):",
-    ]
-    report.extend(f"  {char}: {char_counts[char]}" for char in PROBE_CHARS)
-    text = "\n".join(report) + "\n"
-    (OUT / "report.txt").write_text(text, encoding="utf-8")
+    pairs: dict[tuple[str, str], str] = {}
+    stats: Counter[str] = Counter()
+    if not args.local_only:
+        ingest_turso(pairs, stats)
+    print("Merging local ARPRIM and Open-Data sources")
+    ingest_local_sources(TRAINING, pairs, stats)
+    text = write_splits(pairs, OUT, stats)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     print(text)
 
 

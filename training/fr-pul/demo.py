@@ -55,13 +55,13 @@ def main() -> None:
             return_tensors="pt",
             padding=True,
             truncation=True,
-            max_length=128,
+            max_length=256,
         ).to(device)
         with torch.no_grad():
             generated = model.generate(
                 **encoded,
                 num_beams=4,
-                max_new_tokens=64,
+                max_new_tokens=128,
                 no_repeat_ngram_size=3,
             )
         hypotheses.extend(tokenizer.batch_decode(generated, skip_special_tokens=True))
