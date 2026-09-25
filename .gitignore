@@ -79,3 +79,12 @@ BUILDME.md
 android/.kotlin/
 /training/datasets--ARPRIM--Pulaar_Dictionary
 /training/datasets--ARPRIM--pulaar_fulfulde
+
+# Large Marian weights (copy via scripts/prepare_app_assets.sh)
+/assets/fr-pul/model.safetensors
+/assets/fr-pul/tokenizer-enc.json
+/assets/fr-pul/tokenizer-dec.json
+/training/fr-pul/.venv-wsl
+/Xenova_opus-mt-fr-es
+assets/fr-pul/config.json
+training/fr-pul/inject_greetings.py

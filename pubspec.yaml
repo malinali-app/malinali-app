@@ -1,20 +1,12 @@
 name: malinali
-description: "A new Flutter project."
-# The following line prevents the package from being accidentally published to
-# pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+description: "French ↔ Pulaar translator (on-device MarianMT)."
+publish_to: 'none'
 
-version: 1.0.7+107
+version: 1.0.8+108
 
 environment:
-  sdk: ^3.7.2 #3.10.1
+  sdk: ^3.7.2
 
-# Dependencies specify other packages that your package needs in order to work.
-# To automatically upgrade your package dependencies to the latest versions
-# consider running `flutter pub upgrade --major-versions`. Alternatively,
-# dependencies can be manually updated by changing the version numbers below to
-# the latest version available on pub.dev. To see which dependencies have newer
-# versions available, run `flutter pub outdated`.
 dependencies:
   flutter:
     sdk: flutter
@@ -22,50 +14,43 @@ dependencies:
   path_provider: ^2.1.1
   args: ^2.7.0
 
+  marian_flutter:
+    path: ../marian_flutter
+  language_picker_native_tongue:
+    path: ../language_picker_native_tongue
+  languages_dart: ^1.0.1
+  dio: ^5.8.0
+
   vosk_flutter:
     git:
       url: https://github.com/malinali-app/vosk-flutter
       ref: bd5f53e
-  permission_handler: #^12.0.0 #above missing windows header file makes it buggy ^11.3.1
+  permission_handler:
     git:
       url: https://github.com/weebi-com/flutter-permission-handler/
       ref: e4029c615a6e1fcb1ddfd7c66cf6f09324de3ab3
       path: permission_handler
-  file_picker: ^8.1.4
   share_plus: ^10.1.4
-  sqlite3: ^2.9.4
-  libsql_dart: ^0.8.0
-  sqlite3_flutter_libs: 0.5.41
+  url_launcher: ^6.3.1
+  record: ^7.1.1
+  path: ^1.9.0
+  archive: ^3.6.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
-  # The "flutter_lints" package below contains a set of recommended lints to
-  # encourage good coding practices. The lint set provided by the package is
-  # activated in the `analysis_options.yaml` file located at the root of your
-  # package. See that file for information about deactivating specific lint
-  # rules and activating additional ones.
   flutter_lints: any
   flutter_launcher_icons: ^0.13.1
+  build_runner: ^2.4.8
+  mockito: ^5.4.4
 
-# For information on the generic Dart part of this file, see the
-# following page: https://dart.dev/tools/pub/pubspec
-
-# The following section is specific to Flutter packages.
 flutter:
-
-  # The following line ensures that the Material Icons font is
-  # included with your application, so that you can use the icons in
-  # the material Icons class.
   uses-material-design: true
 
-  # Assets
   assets:
     - assets/malinali_logo.jpg
     - assets/vosk-model-small-fr-0.22.zip
-    - assets/fra-ful/
-    - secrets.txt
+    - assets/fr-pul/
 
   fonts:
     - family: NotoSans
@@ -75,38 +60,11 @@ flutter:
         - asset: assets/fonts/NotoSans-Bold.ttf
           weight: 700
 
-  # An image asset can refer to one or more resolution-specific "variants", see
-  # https://flutter.dev/to/resolution-aware-images
-
-  # For details regarding adding assets from package dependencies, see
-  # https://flutter.dev/to/asset-from-package
-
-  # To add custom fonts to your application, add a fonts section here,
-  # in this "flutter" section. Each entry in this list should have a
-  # "family" key with the font family name, and a "fonts" key with a
-  # list giving the asset and other descriptors for the font. For
-  # example:
-  # fonts:
-  #   - family: Schyler
-  #     fonts:
-  #       - asset: fonts/Schyler-Regular.ttf
-  #       - asset: fonts/Schyler-Italic.ttf
-  #         style: italic
-  #   - family: Trajan Pro
-  #     fonts:
-  #       - asset: fonts/TrajanPro.ttf
-  #       - asset: fonts/TrajanPro_Bold.ttf
-  #         weight: 700
-  #
-  # For details regarding fonts from package dependencies,
-  # see https://flutter.dev/to/font-from-package
-
-# Flutter Launcher Icons configuration
 flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/malinali_logo.jpg"
-  min_sdk_android: 21 # android min sdk min:16, default 21
+  min_sdk_android: 24
   windows:
     generate: true
     image_path: "assets/malinali_logo.jpg"
