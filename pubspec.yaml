@@ -2,7 +2,7 @@ name: malinali
 description: "French ↔ Pulaar translator (on-device MarianMT)."
 publish_to: 'none'
 
-version: 1.0.8+108
+version: 1.1.0+110
 
 environment:
   sdk: ^3.7.2
