@@ -66,6 +66,9 @@ void main() {
 
     expect(find.text('Langue cible'), findsOneWidget);
     expect(find.text('Pulaar'), findsOneWidget);
+    // Downloaded vs cloud icons (same as Modèles de traduction list).
+    expect(find.byIcon(Icons.storage), findsOneWidget);
+    expect(find.byIcon(Icons.cloud_download), findsNWidgets(2));
 
     await tester.enterText(find.byType(TextField), 'pula');
     await tester.pumpAndSettle();

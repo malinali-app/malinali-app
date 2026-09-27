@@ -143,38 +143,6 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
       ),
       body: Column(
         children: [
-          Material(
-            color: const Color(0xFFEFF6FF),
-            child: InkWell(
-              onTap: () async {
-                final model = await Navigator.push<TranslationModel>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        ByoMarianPage(modelService: widget.modelService),
-                  ),
-                );
-                if (!mounted) return;
-                if (model != null) {
-                  Navigator.pop(context, model);
-                  return;
-                }
-                await _loadModels();
-              },
-              child: const ListTile(
-                leading: Icon(Icons.science_outlined, color: Color(0xFF1E3A8A)),
-                title: Text(
-                  'Avancé — Bring Your Own (Hugging Face)',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(
-                  'Ajouter un dépôt Marian/Candle (Xenova, finetune…)',
-                ),
-                trailing: Icon(Icons.chevron_right),
-              ),
-            ),
-          ),
-          const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: TextField(
@@ -267,6 +235,7 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
                               hasVosk && (_voskDownloadedStatus[voskModel.name] ?? false);
 
                           return ListTile(
+                            tileColor: model.isCustom ? const Color(0xFFF0FDF4) : null,
                             leading: Icon(
                               model.isAsset || isDownloaded
                                   ? Icons.storage

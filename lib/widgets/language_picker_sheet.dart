@@ -249,11 +249,13 @@ class _LanguagePickerSheetState extends State<LanguagePickerSheet> {
                             if (badges.translationReady ||
                                 badges.translationAvailable)
                               _BadgeIcon(
-                                icon: Icons.translate,
+                                icon: badges.translationReady
+                                    ? Icons.storage
+                                    : Icons.cloud_download,
                                 ready: badges.translationReady,
                                 tooltip: badges.translationReady
-                                    ? 'Traduction hors-ligne prête'
-                                    : 'Modèle de traduction disponible',
+                                    ? 'Modèle téléchargé (hors-ligne)'
+                                    : 'À télécharger depuis Hugging Face',
                               ),
                             if (badges.voskReady || badges.voskAvailable) ...[
                               const SizedBox(width: 6),

@@ -186,18 +186,36 @@ class TranslationModelService {
   }
 
   /// Keep a single model per source→target ISO pair.
-  /// Preference: custom/private → Xenova → curated boot id → others.
+  /// Exception: BYO (custom) models are NOT deduped, allowing multiple models per pair.
+  /// If a custom model exists for a pair, it hides the non-custom ones for that pair.
   @visibleForTesting
   List<TranslationModel> dedupeByLanguagePair(List<TranslationModel> models) {
     final best = <String, TranslationModel>{};
+    final List<TranslationModel> custom = [];
+    final Set<String> customPairs = {};
+    
+    // Collect all custom models
     for (final model in models) {
+      if (model.isCustom) {
+        custom.add(model);
+        customPairs.add(model.pairKey);
+      }
+    }
+    
+    // Dedupe non-custom models, skipping those already covered by custom models
+    for (final model in models) {
+      if (model.isCustom) continue;
+      
       final key = model.pairKey;
+      if (customPairs.contains(key)) continue;
+      
       final current = best[key];
       if (current == null || _modelRank(model) < _modelRank(current)) {
         best[key] = model;
       }
     }
-    return best.values.toList();
+    
+    return [...best.values, ...custom];
   }
 
   int _modelRank(TranslationModel model) {

@@ -99,16 +99,17 @@ class _ByoMarianPageState extends State<ByoMarianPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Bring Your Own — MarianMT'),
-      ),
+      appBar: AppBar(title: const Text('Bring Your Own — MarianMT')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _ExplanationCard(
-            onOpenDocs: () => launchUrl(
-              Uri.parse('https://huggingface.co/docs/hub/models-downloading'),
-            ),
+            onOpenDocs:
+                () => launchUrl(
+                  Uri.parse(
+                    'https://huggingface.co/docs/hub/models-downloading',
+                  ),
+                ),
           ),
           const SizedBox(height: 16),
           TextField(
@@ -162,18 +163,22 @@ class _ByoMarianPageState extends State<ByoMarianPage> {
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _busy ? null : _register,
-            icon: _busy
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.add),
+            icon:
+                _busy
+                    ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                    : const Icon(Icons.add),
             label: Text(_busy ? 'Vérification…' : 'Ajouter le modèle'),
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
-            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           ],
           if (_success != null) ...[
             const SizedBox(height: 12),
@@ -193,6 +198,9 @@ class _ByoMarianPageState extends State<ByoMarianPage> {
           else
             ..._custom.map(
               (m) => Card(
+                color: const Color(
+                  0xFFF0FDF4,
+                ), // Très léger vert (green.shade50)
                 child: ListTile(
                   title: Text(m.displayName),
                   subtitle: Text(m.modelId),
@@ -229,38 +237,32 @@ class _ExplanationCard extends StatelessWidget {
             Text(
               'Qu’est-ce qu’un modèle MarianMT « Candle » ?',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF1E3A8A),
-                  ),
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF1E3A8A),
+              ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Malinali charge des poids Marian (Helsinki-NLP / finetunes) '
-              'via le moteur Rust Candle (marian_flutter), pas ONNX. '
-              'Le dépôt Hugging Face doit exposer des fichiers prêts pour '
-              'le téléphone :',
+              'Malinali charge des poids Marian (.safetensors) '
+              'via le moteur Rust Candle (marian_flutter)'
+              'Le dépôt Hugging Face doit exposer des fichiers prêts à l\'usage : ',
               style: style,
             ),
             const SizedBox(height: 8),
             const Text('• config.json — architecture Marian'),
             const Text('• model.safetensors — poids (~75–285 Mo)'),
             const Text(
-              '• tokenizer.json — OU la paire tokenizer-enc.json + tokenizer-dec.json '
-              '(packs type french-fula)',
+              '• tokenizer.json — OU la paire tokenizer-enc.json + tokenizer-dec.json ',
             ),
             const SizedBox(height: 8),
             Text(
-              'Les dépôts Xenova/opus-mt-* et beaucoup de conversions '
-              'safetensors fonctionnent tels quels. Un finetune maison doit '
-              'être exporté dans ce format (comme flutter-painter/french-fula).',
+              'Les dépôts Helsinki-NLP et Xenova/opus-mt-* fonctionnent tels quels.',
               style: style,
             ),
             const SizedBox(height: 8),
             Text(
               'Les langues sont déduites si le nom contient opus-mt-xx-yy '
-              '(ex. opus-mt-fr-en). Sinon, choisissez source et cible ci-dessous. '
-              'Un seul modèle est gardé par paire de langues dans l’app '
-              '(ex. un seul Français→English), pour éviter les doublons.',
+              '(ex. opus-mt-fr-en). Sinon, choisissez source et cible ci-dessous. ',
               style: style,
             ),
             const SizedBox(height: 8),

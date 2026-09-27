@@ -10,6 +10,21 @@ import 'package:malinali/widgets/language_picker_sheet.dart';
 import 'package:marian_flutter/marian_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
+/// Brand chrome (main translate screen): blue field, yellow frames, thin red CTA accent.
+abstract final class _MalinaliChrome {
+  static const blueBg = Color(0xFF1E3A8A);
+  /// Darker panel fill for source / target text zones.
+  static const bluePanel = Color(0xFF0B1F4A);
+  static const blueAction = Color(0xFF2563EB);
+  static const yellowBorder = Color(0xFFFACC15);
+  static const redAccent = Color(0xFFDC2626);
+  static const onBlue = Color(0xFFF8FAFC);
+  /// Source text: very light white on dark blue.
+  static const sourceText = Color(0xFFF8FAFC);
+  /// Target text: very light yellow on dark blue.
+  static const targetText = Color(0xFFFEF08A);
+}
+
 /// Language-agnostic translate screen (MarianMT + dynamic Vosk mic).
 class TranslatePage extends StatefulWidget {
   const TranslatePage({
@@ -44,8 +59,10 @@ class _TranslatePageState extends State<TranslatePage> {
   Language _targetLang = Languages.english;
   List<TranslationModel> _availableModels = [];
   TranslationModel? _selectedModel;
+  Map<String, bool> _downloadedStatus = {};
 
   List<VoskModel> _voskModels = [];
+  Map<String, bool> _voskDownloadedStatus = {};
   VoskModel? _matchingVoskModel;
   bool _isVoskModelDownloaded = false;
   bool _isDownloadingVosk = false;
@@ -96,6 +113,12 @@ class _TranslatePageState extends State<TranslatePage> {
       _matchingVoskModel = matching;
       _isVoskModelDownloaded = downloaded;
       _speechReady = false;
+      if (matching != null) {
+        _voskDownloadedStatus = {
+          ..._voskDownloadedStatus,
+          matching.name: downloaded,
+        };
+      }
     });
 
     if (matching != null && downloaded) {
@@ -134,6 +157,17 @@ class _TranslatePageState extends State<TranslatePage> {
     }
   }
 
+  Future<void> _refreshDownloadedStatus([List<TranslationModel>? models]) async {
+    final list = models ?? _availableModels;
+    final status = <String, bool>{};
+    for (final model in list) {
+      status[model.modelId] =
+          model.isAsset || await _modelService.isModelDownloaded(model);
+    }
+    if (!mounted) return;
+    setState(() => _downloadedStatus = status);
+  }
+
   Future<void> _loadAvailableModels() async {
     final models = await _modelService.fetchAvailableModels(_sourceLang);
     if (!mounted) return;
@@ -141,6 +175,7 @@ class _TranslatePageState extends State<TranslatePage> {
     setState(() {
       _availableModels = models;
     });
+    await _refreshDownloadedStatus(models);
 
     if (models.isNotEmpty) {
       final currentTargetIso = _targetLang.localeIntl.locale.languageCode;
@@ -157,8 +192,9 @@ class _TranslatePageState extends State<TranslatePage> {
       // Otherwise default to the first one (e.g. Fula if available)
       nextModel ??= models.first;
       if (nextModel.modelId != _selectedModel?.modelId) {
-        final isDownloaded = await _modelService.isModelDownloaded(nextModel);
-        if (!isDownloaded && !nextModel.isAsset) {
+        final isDownloaded = nextModel.isAsset ||
+            (_downloadedStatus[nextModel.modelId] ?? false);
+        if (!isDownloaded) {
           if (!mounted) return;
           final confirm = await showDialog<bool>(
             context: context,
@@ -228,6 +264,10 @@ class _TranslatePageState extends State<TranslatePage> {
           _sourceLang = model.sourceLang;
           _loadingModel = false;
           _output = '';
+          _downloadedStatus = {
+            ..._downloadedStatus,
+            model.modelId: true,
+          };
         });
         await _updateVoskModelForSource();
       }
@@ -432,9 +472,17 @@ class _TranslatePageState extends State<TranslatePage> {
               InkWell(
                 onTap: _loadingModel ? null : _openTranslationModelPicker,
                 borderRadius: BorderRadius.circular(10),
-                child: Padding(
+                child: Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
+                      const EdgeInsets.symmetric(horizontal: 10.0, vertical: 6.0),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: _MalinaliChrome.yellowBorder,
+                      width: 1.5,
+                    ),
+                  ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -444,7 +492,7 @@ class _TranslatePageState extends State<TranslatePage> {
                           fontFamily: 'NotoSans',
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF1E3A8A),
+                          color: _MalinaliChrome.onBlue,
                         ),
                       ),
                       if (hasVosk) ...[
@@ -457,8 +505,8 @@ class _TranslatePageState extends State<TranslatePage> {
                             Icons.mic,
                             size: 18,
                             color: _isVoskModelDownloaded
-                                ? Colors.green
-                                : const Color(0xFF2563EB),
+                                ? Colors.greenAccent.shade200
+                                : _MalinaliChrome.yellowBorder,
                           ),
                         ),
                       ],
@@ -466,7 +514,7 @@ class _TranslatePageState extends State<TranslatePage> {
                       const Icon(
                         Icons.keyboard_arrow_down_rounded,
                         size: 20,
-                        color: Color(0xFF64748B),
+                        color: _MalinaliChrome.onBlue,
                       ),
                     ],
                   ),
@@ -479,8 +527,9 @@ class _TranslatePageState extends State<TranslatePage> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
+                    color: Colors.white.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _MalinaliChrome.yellowBorder),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -488,16 +537,19 @@ class _TranslatePageState extends State<TranslatePage> {
                       const SizedBox(
                         width: 12,
                         height: 12,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: _MalinaliChrome.yellowBorder,
+                        ),
                       ),
                       const SizedBox(width: 6),
                       Text(
                         _loadingModelLabel,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontFamily: 'NotoSans',
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
-                          color: Colors.blue.shade700,
+                          color: _MalinaliChrome.onBlue,
                         ),
                       ),
                     ],
@@ -506,16 +558,18 @@ class _TranslatePageState extends State<TranslatePage> {
               IconButton(
                 icon: const Icon(Icons.settings_outlined),
                 tooltip: 'Paramètres',
-                color: const Color(0xFF64748B),
+                color: _MalinaliChrome.onBlue,
                 onPressed: _showSettings,
               ),
             ],
           ),
         ),
+        Container(height: 2, color: _MalinaliChrome.redAccent),
         if (_loadingModel)
           const LinearProgressIndicator(
             minHeight: 2,
             backgroundColor: Colors.transparent,
+            color: _MalinaliChrome.yellowBorder,
           ),
       ],
     );
@@ -537,53 +591,52 @@ class _TranslatePageState extends State<TranslatePage> {
     return out;
   }
 
-  LanguagePickerBadges _badgesFor(Language language) {
-    final iso = languageIsoCode(language);
-    final hasTranslation = _availableModels.any(
-      (m) =>
-          languageIsoCode(m.sourceLang) == iso ||
-          languageIsoCode(m.targetLang) == iso,
-    );
-    final vosk = _voskService.findModelForLanguage(language, _voskModels);
-    final voskReady = vosk != null &&
-        (_matchingVoskModel?.name == vosk.name
-            ? _isVoskModelDownloaded
-            : false);
+  TranslationModel? _modelForTarget(Language target) {
+    return _modelService.preferredModelForPair(
+          _availableModels,
+          sourceIso: languageIsoCode(_sourceLang),
+          targetIso: languageIsoCode(target),
+        ) ??
+        () {
+          final iso = languageIsoCode(target);
+          for (final m in _availableModels) {
+            if (languageIsoCode(m.targetLang) == iso) return m;
+          }
+          return null;
+        }();
+  }
+
+  LanguagePickerBadges _badgesForTarget(Language language) {
+    final model = _modelForTarget(language);
+    if (model == null) return const LanguagePickerBadges();
+    final ready = model.isAsset || (_downloadedStatus[model.modelId] ?? false);
     return LanguagePickerBadges(
-      translationAvailable: hasTranslation,
-      translationReady: hasTranslation &&
-          (_selectedModel != null &&
-              (languageIsoCode(_selectedModel!.sourceLang) == iso ||
-                  languageIsoCode(_selectedModel!.targetLang) == iso)),
-      voskAvailable: vosk != null,
-      voskReady: voskReady,
+      translationAvailable: true,
+      translationReady: ready,
     );
   }
 
   Future<void> _openTargetLanguagePicker() async {
     if (_loadingModel || _availableModels.isEmpty) return;
+    await _refreshDownloadedStatus();
+    if (!mounted) return;
     final targets = _uniqueLanguages(_availableModels.map((m) => m.targetLang));
     final picked = await LanguagePickerSheet.show(
       context,
       languages: targets,
       selected: _targetLang,
       title: 'Langue cible',
-      badgesFor: _badgesFor,
+      badgesFor: _badgesForTarget,
     );
     if (picked == null || !mounted) return;
     final iso = languageIsoCode(picked);
     if (iso == languageIsoCode(_targetLang)) return;
-    final model = _modelService.preferredModelForPair(
-          _availableModels,
-          sourceIso: languageIsoCode(_sourceLang),
-          targetIso: iso,
-        ) ??
-        _availableModels.firstWhere(
-          (m) => languageIsoCode(m.targetLang) == iso,
-        );
+    final model = _modelForTarget(picked);
+    if (model == null) return;
 
-    final isDownloaded = await _modelService.isModelDownloaded(model);
-    if (!isDownloaded && !model.isAsset) {
+    final isDownloaded =
+        model.isAsset || (_downloadedStatus[model.modelId] ?? false);
+    if (!isDownloaded) {
       if (!mounted) return;
       final confirm = await showDialog<bool>(
         context: context,
@@ -626,9 +679,11 @@ class _TranslatePageState extends State<TranslatePage> {
     if (_loadingModel) return;
 
     List<Language> sources;
+    List<TranslationModel> allModels = _availableModels;
     try {
-      final all = await _modelService.fetchAllAvailableModels();
-      sources = _uniqueLanguages(all.map((m) => m.sourceLang));
+      allModels = await _modelService.fetchAllAvailableModels();
+      sources = _uniqueLanguages(allModels.map((m) => m.sourceLang));
+      await _refreshDownloadedStatus(allModels);
     } catch (_) {
       sources = _uniqueLanguages(
         _availableModels.isEmpty
@@ -639,12 +694,31 @@ class _TranslatePageState extends State<TranslatePage> {
     if (sources.isEmpty) sources = [Languages.french];
     if (!mounted) return;
 
+    final statusSnapshot = Map<String, bool>.from(_downloadedStatus);
     final picked = await LanguagePickerSheet.show(
       context,
       languages: sources,
       selected: _sourceLang,
       title: 'Langue source',
-      badgesFor: _badgesFor,
+      badgesFor: (language) {
+        final iso = languageIsoCode(language);
+        final forSource = allModels
+            .where((m) => languageIsoCode(m.sourceLang) == iso)
+            .toList();
+        final hasTranslation = forSource.isNotEmpty;
+        final ready = forSource.any(
+          (m) => m.isAsset || (statusSnapshot[m.modelId] ?? false),
+        );
+        final vosk = _voskService.findModelForLanguage(language, _voskModels);
+        final voskReady =
+            vosk != null && (_voskDownloadedStatus[vosk.name] ?? false);
+        return LanguagePickerBadges(
+          translationAvailable: hasTranslation,
+          translationReady: ready,
+          voskAvailable: vosk != null,
+          voskReady: voskReady,
+        );
+      },
     );
     if (picked == null || !mounted) return;
     final iso = languageIsoCode(picked);
@@ -673,11 +747,14 @@ class _TranslatePageState extends State<TranslatePage> {
                 fontFamily: 'NotoSans',
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF1E3A8A),
+                color: _MalinaliChrome.targetText,
               ),
             ),
             if (_availableModels.isNotEmpty)
-              const Icon(Icons.arrow_drop_down, color: Color(0xFF2563EB)),
+              const Icon(
+                Icons.arrow_drop_down,
+                color: _MalinaliChrome.yellowBorder,
+              ),
           ],
         ),
       ),
@@ -781,7 +858,7 @@ class _TranslatePageState extends State<TranslatePage> {
         _sourceLang.name.isEmpty ? _sourceLang.nameEn : _sourceLang.name;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9), // slate 100
+      backgroundColor: _MalinaliChrome.blueBg,
       body: SafeArea(
         child: Column(
           children: [
@@ -792,13 +869,16 @@ class _TranslatePageState extends State<TranslatePage> {
                 width: double.infinity,
                 margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: Colors.grey.shade300),
+                  color: _MalinaliChrome.bluePanel,
+                  border: Border.all(
+                    color: _MalinaliChrome.yellowBorder,
+                    width: 2,
+                  ),
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
-                      blurRadius: 4,
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
                   ],
@@ -830,12 +910,12 @@ class _TranslatePageState extends State<TranslatePage> {
                                       fontFamily: 'NotoSans',
                                       fontWeight: FontWeight.w700,
                                       fontSize: 15,
-                                      color: Color(0xFF1E3A8A),
+                                      color: _MalinaliChrome.sourceText,
                                     ),
                                   ),
                                   const Icon(
                                     Icons.arrow_drop_down,
-                                    color: Color(0xFF2563EB),
+                                    color: _MalinaliChrome.sourceText,
                                     size: 22,
                                   ),
                                 ],
@@ -859,13 +939,13 @@ class _TranslatePageState extends State<TranslatePage> {
                               child: Container(
                                 padding: const EdgeInsets.all(6),
                                 decoration: BoxDecoration(
-                                  color: Colors.grey.shade100,
+                                  color: Colors.white.withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(16),
                                 ),
-                                child: Icon(
+                                child: const Icon(
                                   Icons.close,
                                   size: 16,
-                                  color: Colors.grey.shade700,
+                                  color: _MalinaliChrome.sourceText,
                                 ),
                               ),
                             ),
@@ -873,7 +953,11 @@ class _TranslatePageState extends State<TranslatePage> {
                         ],
                       ),
                     ),
-                    Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+                    Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: Colors.white.withValues(alpha: 0.15),
+                    ),
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -881,6 +965,7 @@ class _TranslatePageState extends State<TranslatePage> {
                           controller: _inputController,
                           focusNode: _inputFocusNode,
                           autofocus: true,
+                          cursorColor: _MalinaliChrome.sourceText,
                           maxLines: null,
                           expands: true,
                           textInputAction: TextInputAction.done,
@@ -889,14 +974,14 @@ class _TranslatePageState extends State<TranslatePage> {
                             fontSize: 16,
                             height: 1.4,
                             fontFamily: 'NotoSans',
-                            color: Color(0xFF0F172A),
+                            color: _MalinaliChrome.sourceText,
                           ),
                           decoration: InputDecoration(
                             border: InputBorder.none,
                             hintText: 'Tapez votre texte ici...',
                             hintStyle: TextStyle(
                               fontFamily: 'NotoSans',
-                              color: Colors.grey.shade400,
+                              color: _MalinaliChrome.sourceText.withValues(alpha: 0.45),
                               fontSize: 16,
                             ),
                           ),
@@ -908,35 +993,50 @@ class _TranslatePageState extends State<TranslatePage> {
                         alignment: Alignment.bottomRight,
                         child: Padding(
                           padding: const EdgeInsets.all(10.0),
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2563EB),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 10,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(20),
+                              border: const Border(
+                                bottom: BorderSide(
+                                  color: _MalinaliChrome.redAccent,
+                                  width: 3,
+                                ),
                               ),
                             ),
-                            onPressed: _busy ? null : _translate,
-                            icon: _busy
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _MalinaliChrome.blueAction,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 10,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                              ),
+                              onPressed: _busy ? null : _translate,
+                              icon: _busy
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.arrow_forward_rounded,
+                                      size: 18,
                                     ),
-                                  )
-                                : const Icon(Icons.arrow_forward_rounded, size: 18),
-                            label: const Text(
-                              'Traduire',
-                              style: TextStyle(
-                                fontFamily: 'NotoSans',
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
+                              label: const Text(
+                                'Traduire',
+                                style: TextStyle(
+                                  fontFamily: 'NotoSans',
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
                               ),
                             ),
                           ),
@@ -952,13 +1052,16 @@ class _TranslatePageState extends State<TranslatePage> {
                 width: double.infinity,
                 margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC), // slate 50
-                  border: Border.all(color: Colors.grey.shade300),
+                  color: _MalinaliChrome.bluePanel,
+                  border: Border.all(
+                    color: _MalinaliChrome.yellowBorder,
+                    width: 2,
+                  ),
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
-                      blurRadius: 4,
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
                   ],
@@ -983,20 +1086,24 @@ class _TranslatePageState extends State<TranslatePage> {
                                   icon: const Icon(Icons.copy_rounded, size: 18),
                                   onPressed: _copyOutput,
                                   tooltip: 'Copier',
-                                  color: const Color(0xFF475569),
+                                  color: _MalinaliChrome.targetText,
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.share_rounded, size: 18),
                                   onPressed: _shareOutput,
                                   tooltip: 'Partager',
-                                  color: const Color(0xFF475569),
+                                  color: _MalinaliChrome.targetText,
                                 ),
                               ],
                             ),
                         ],
                       ),
                     ),
-                    Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+                    Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: Colors.white.withValues(alpha: 0.15),
+                    ),
                     Expanded(
                       child: SingleChildScrollView(
                         padding: const EdgeInsets.all(14),
@@ -1004,26 +1111,26 @@ class _TranslatePageState extends State<TranslatePage> {
                             ? Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: Colors.red.shade50,
-                                  border: Border.all(color: Colors.red.shade200),
+                                  color: Colors.red.shade900.withValues(alpha: 0.35),
+                                  border: Border.all(color: _MalinaliChrome.redAccent),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Icon(
+                                    const Icon(
                                       Icons.error_outline,
-                                      color: Colors.red.shade700,
+                                      color: _MalinaliChrome.targetText,
                                       size: 20,
                                     ),
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: SelectableText(
                                         _error!,
-                                        style: TextStyle(
+                                        style: const TextStyle(
                                           fontFamily: 'NotoSans',
                                           fontSize: 14,
-                                          color: Colors.red.shade900,
+                                          color: _MalinaliChrome.sourceText,
                                         ),
                                       ),
                                     ),
@@ -1039,8 +1146,9 @@ class _TranslatePageState extends State<TranslatePage> {
                                   height: 1.4,
                                   fontFamily: 'NotoSans',
                                   color: _output.isEmpty
-                                      ? Colors.grey.shade400
-                                      : const Color(0xFF0F172A),
+                                      ? _MalinaliChrome.targetText
+                                          .withValues(alpha: 0.45)
+                                      : _MalinaliChrome.targetText,
                                 ),
                               ),
                       ),

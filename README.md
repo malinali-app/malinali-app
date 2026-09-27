@@ -13,7 +13,7 @@ French ↔ Pulaar translator (on-device MarianMT via [`marian_flutter`](https://
 
 - **Boot default**: public `Xenova/opus-mt-fr-en` (one model per language pair; no duplicate targets).
 - **French → Pulaar**: select in translation settings; downloads `flutter-painter/french-fula`.
-- **Bring Your Own**: Paramètres → Traduction → *Avancé — Bring Your Own* — paste a HF Marian/Candle repo id (`org/name`), optional read token for private repos.
+- **Bring Your Own**: Paramètres → Traduction → icon “+” (AppBar) — paste a HF Marian/Candle repo id (`org/name`), optional read token for private repos.
 
 ```bash
 # After rotating the read token in secret.txt:

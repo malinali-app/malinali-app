@@ -59,7 +59,7 @@ class SettingsPage extends StatelessWidget {
                 ),
               ),
               subtitle: const Text(
-                'MarianMT hors-ligne + Bring Your Own (Hugging Face)',
+                'MarianMT hors-ligne',
                 style: TextStyle(fontSize: 13),
               ),
               trailing: const Icon(Icons.chevron_right),
