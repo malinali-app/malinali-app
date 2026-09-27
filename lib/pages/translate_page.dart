@@ -6,6 +6,7 @@ import 'package:malinali/pages/translation_settings_page.dart';
 import 'package:malinali/services/speech_recognition_service.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/vosk_model_service.dart';
+import 'package:malinali/widgets/language_picker_sheet.dart';
 import 'package:marian_flutter/marian_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -14,12 +15,14 @@ class TranslatePage extends StatefulWidget {
   const TranslatePage({
     super.key,
     required this.initialMarian,
+    this.initialModel,
     this.modelService,
     this.voskService,
     this.speechService,
   });
 
   final MarianService initialMarian;
+  final TranslationModel? initialModel;
   final TranslationModelService? modelService;
   final VoskModelService? voskService;
   final SpeechRecognitionService? speechService;
@@ -38,9 +41,9 @@ class _TranslatePageState extends State<TranslatePage> {
   SpeechRecognitionService? _speech;
 
   Language _sourceLang = Languages.french;
-  Language _targetLang = TranslationModelService.privateModels.first.targetLang;
+  Language _targetLang = Languages.english;
   List<TranslationModel> _availableModels = [];
-  TranslationModel? _selectedModel = TranslationModelService.privateModels.first;
+  TranslationModel? _selectedModel;
 
   List<VoskModel> _voskModels = [];
   VoskModel? _matchingVoskModel;
@@ -51,6 +54,7 @@ class _TranslatePageState extends State<TranslatePage> {
   String? _error;
   bool _busy = false;
   bool _loadingModel = false;
+  String _loadingModelLabel = 'Chargement...';
   bool _listening = false;
   bool _speechReady = false;
 
@@ -60,6 +64,10 @@ class _TranslatePageState extends State<TranslatePage> {
     _modelService = widget.modelService ?? TranslationModelService();
     _voskService = widget.voskService ?? VoskModelService();
     _marian = widget.initialMarian;
+    final boot = widget.initialModel ?? TranslationModelService.defaultBootModel;
+    _selectedModel = boot;
+    _sourceLang = boot.sourceLang;
+    _targetLang = boot.targetLang;
     _speech = widget.speechService ?? SpeechRecognitionService(modelService: _voskService);
 
     _inputController.addListener(() => setState(() {}));
@@ -149,6 +157,42 @@ class _TranslatePageState extends State<TranslatePage> {
       // Otherwise default to the first one (e.g. Fula if available)
       nextModel ??= models.first;
       if (nextModel.modelId != _selectedModel?.modelId) {
+        final isDownloaded = await _modelService.isModelDownloaded(nextModel);
+        if (!isDownloaded && !nextModel.isAsset) {
+          if (!mounted) return;
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Téléchargement requis'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Le modèle de traduction pour ${nextModel!.displayName} doit être téléchargé'
+                    ' (${nextModel.downloadSizeHint ?? 'environ 150 Mo'}).',
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Ne quittez pas l\'écran et ne mettez pas l\'application en arrière-plan pendant le téléchargement.',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.redAccent),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Plus tard'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Télécharger'),
+                ),
+              ],
+            ),
+          );
+          if (confirm != true) return;
+        }
         await _switchModel(nextModel);
       }
     }
@@ -159,6 +203,9 @@ class _TranslatePageState extends State<TranslatePage> {
 
     setState(() {
       _loadingModel = true;
+      _loadingModelLabel = model.downloadSizeHint != null
+          ? 'Téléchargement ${model.downloadSizeHint}…'
+          : 'Chargement...';
       _error = null;
     });
 
@@ -188,7 +235,7 @@ class _TranslatePageState extends State<TranslatePage> {
       if (mounted) {
         setState(() {
           _loadingModel = false;
-          _error = 'Failed to load model: $e';
+          _error = 'Erreur lors du chargement du modèle : $e';
         });
       }
     }
@@ -256,8 +303,19 @@ class _TranslatePageState extends State<TranslatePage> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Saisie vocale en ${model.langText}'),
-        content: Text(
-          'Pour dicter votre texte en ${model.langText}, le modèle vocal (${model.sizeText}) doit être téléchargé.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Pour dicter votre texte en ${model.langText}, le modèle vocal (${model.sizeText}) doit être téléchargé.',
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Ne quittez pas l\'écran et ne mettez pas l\'application en arrière-plan pendant le téléchargement.',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.redAccent),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -292,7 +350,13 @@ class _TranslatePageState extends State<TranslatePage> {
       if (mounted) {
         setState(() => _isDownloadingVosk = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur téléchargement voix: $e')),
+          SnackBar(
+            content: Text('Erreur téléchargement voix: $e'),
+            action: SnackBarAction(
+              label: 'Copier',
+              onPressed: () => Clipboard.setData(ClipboardData(text: e.toString())),
+            ),
+          ),
         );
       }
     }
@@ -428,7 +492,7 @@ class _TranslatePageState extends State<TranslatePage> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        'Chargement...',
+                        _loadingModelLabel,
                         style: TextStyle(
                           fontFamily: 'NotoSans',
                           fontSize: 12,
@@ -457,63 +521,165 @@ class _TranslatePageState extends State<TranslatePage> {
     );
   }
 
-  Widget _buildTargetLanguageDropdown() {
-    final currentTargetIso = _targetLang.localeIntl.locale.languageCode;
-    final availableTargets = _availableModels.map((m) => m.targetLang).toList();
+  List<Language> _uniqueLanguages(Iterable<Language> languages) {
+    final seenIso = <String>{};
+    final seenLabel = <String>{};
+    final out = <Language>[];
+    for (final language in languages) {
+      final iso = languageIsoCode(language).toLowerCase();
+      final label = languageDisplayName(language).trim().toLowerCase();
+      // Collapse both identical ISO codes and identical display names
+      // (e.g. two catalog entries both showing "English").
+      if (!seenIso.add(iso)) continue;
+      if (label.isNotEmpty && !seenLabel.add(label)) continue;
+      out.add(language);
+    }
+    return out;
+  }
 
-    // Check if current target is in available targets
-    final hasCurrent = availableTargets.any(
-      (l) => l.localeIntl.locale.languageCode == currentTargetIso,
+  LanguagePickerBadges _badgesFor(Language language) {
+    final iso = languageIsoCode(language);
+    final hasTranslation = _availableModels.any(
+      (m) =>
+          languageIsoCode(m.sourceLang) == iso ||
+          languageIsoCode(m.targetLang) == iso,
     );
+    final vosk = _voskService.findModelForLanguage(language, _voskModels);
+    final voskReady = vosk != null &&
+        (_matchingVoskModel?.name == vosk.name
+            ? _isVoskModelDownloaded
+            : false);
+    return LanguagePickerBadges(
+      translationAvailable: hasTranslation,
+      translationReady: hasTranslation &&
+          (_selectedModel != null &&
+              (languageIsoCode(_selectedModel!.sourceLang) == iso ||
+                  languageIsoCode(_selectedModel!.targetLang) == iso)),
+      voskAvailable: vosk != null,
+      voskReady: voskReady,
+    );
+  }
 
-    final currentName =
-        _targetLang.name.isEmpty ? _targetLang.nameEn : _targetLang.name;
+  Future<void> _openTargetLanguagePicker() async {
+    if (_loadingModel || _availableModels.isEmpty) return;
+    final targets = _uniqueLanguages(_availableModels.map((m) => m.targetLang));
+    final picked = await LanguagePickerSheet.show(
+      context,
+      languages: targets,
+      selected: _targetLang,
+      title: 'Langue cible',
+      badgesFor: _badgesFor,
+    );
+    if (picked == null || !mounted) return;
+    final iso = languageIsoCode(picked);
+    if (iso == languageIsoCode(_targetLang)) return;
+    final model = _modelService.preferredModelForPair(
+          _availableModels,
+          sourceIso: languageIsoCode(_sourceLang),
+          targetIso: iso,
+        ) ??
+        _availableModels.firstWhere(
+          (m) => languageIsoCode(m.targetLang) == iso,
+        );
 
-    if (!hasCurrent && availableTargets.isNotEmpty) {
-      return Text(
-        currentName,
-        style: const TextStyle(
-          fontFamily: 'NotoSans',
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-          color: Color(0xFF1E3A8A),
+    final isDownloaded = await _modelService.isModelDownloaded(model);
+    if (!isDownloaded && !model.isAsset) {
+      if (!mounted) return;
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Téléchargement requis'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Le modèle de traduction pour ${model.displayName} doit être téléchargé'
+                ' (${model.downloadSizeHint ?? 'environ 150 Mo'}).',
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Ne quittez pas l\'écran et ne mettez pas l\'application en arrière-plan pendant le téléchargement.',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.redAccent),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Plus tard'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Télécharger'),
+            ),
+          ],
         ),
       );
+      if (confirm != true) return;
     }
 
-    return DropdownButtonHideUnderline(
-      child: DropdownButton<String>(
-        value: hasCurrent ? currentTargetIso : null,
-        icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF2563EB)),
-        style: const TextStyle(
-          fontFamily: 'NotoSans',
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-          color: Color(0xFF1E3A8A),
-        ),
-        onChanged: (iso) {
-          if (iso == null) return;
-          final model = _availableModels.firstWhere(
-            (m) => m.targetLang.localeIntl.locale.languageCode == iso,
-          );
-          _switchModel(model);
-        },
-        items: _availableModels.map((m) {
-          final name =
-              m.targetLang.name.isEmpty ? m.targetLang.nameEn : m.targetLang.name;
-          return DropdownMenuItem<String>(
-            value: m.targetLang.localeIntl.locale.languageCode,
-            child: Text(
-              name,
+    await _switchModel(model);
+  }
+
+  Future<void> _openSourceLanguagePicker() async {
+    if (_loadingModel) return;
+
+    List<Language> sources;
+    try {
+      final all = await _modelService.fetchAllAvailableModels();
+      sources = _uniqueLanguages(all.map((m) => m.sourceLang));
+    } catch (_) {
+      sources = _uniqueLanguages(
+        _availableModels.isEmpty
+            ? [Languages.french]
+            : _availableModels.map((m) => m.sourceLang),
+      );
+    }
+    if (sources.isEmpty) sources = [Languages.french];
+    if (!mounted) return;
+
+    final picked = await LanguagePickerSheet.show(
+      context,
+      languages: sources,
+      selected: _sourceLang,
+      title: 'Langue source',
+      badgesFor: _badgesFor,
+    );
+    if (picked == null || !mounted) return;
+    final iso = languageIsoCode(picked);
+    if (iso == languageIsoCode(_sourceLang)) return;
+
+    setState(() => _sourceLang = picked);
+    await _loadAvailableModels();
+    await _updateVoskModelForSource();
+  }
+
+  Widget _buildTargetLanguageDropdown() {
+    final currentName = languageDisplayName(_targetLang);
+    return InkWell(
+      onTap: _loadingModel || _availableModels.isEmpty
+          ? null
+          : _openTargetLanguagePicker,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              currentName,
               style: const TextStyle(
                 fontFamily: 'NotoSans',
                 fontSize: 15,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
                 color: Color(0xFF1E3A8A),
               ),
             ),
-          );
-        }).toList(),
+            if (_availableModels.isNotEmpty)
+              const Icon(Icons.arrow_drop_down, color: Color(0xFF2563EB)),
+          ],
+        ),
       ),
     );
   }
@@ -647,13 +813,33 @@ class _TranslatePageState extends State<TranslatePage> {
                       ),
                       child: Row(
                         children: [
-                          Text(
-                            srcName,
-                            style: const TextStyle(
-                              fontFamily: 'NotoSans',
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15,
-                              color: Color(0xFF1E3A8A),
+                          InkWell(
+                            onTap: _loadingModel ? null : _openSourceLanguagePicker,
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 2,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    srcName,
+                                    style: const TextStyle(
+                                      fontFamily: 'NotoSans',
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 15,
+                                      color: Color(0xFF1E3A8A),
+                                    ),
+                                  ),
+                                  const Icon(
+                                    Icons.arrow_drop_down,
+                                    color: Color(0xFF2563EB),
+                                    size: 22,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                           const Spacer(),
@@ -832,7 +1018,7 @@ class _TranslatePageState extends State<TranslatePage> {
                                     ),
                                     const SizedBox(width: 8),
                                     Expanded(
-                                      child: Text(
+                                      child: SelectableText(
                                         _error!,
                                         style: TextStyle(
                                           fontFamily: 'NotoSans',

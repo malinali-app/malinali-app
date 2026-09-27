@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:malinali/services/vosk_model_service.dart';
 
 class TranscriptionSettingsPage extends StatefulWidget {
@@ -54,7 +55,13 @@ class _TranscriptionSettingsPageState extends State<TranscriptionSettingsPage> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Erreur: $e')),
+              SnackBar(
+                content: Text('Erreur: $e'),
+                action: SnackBarAction(
+                  label: 'Copier',
+                  onPressed: () => Clipboard.setData(ClipboardData(text: e.toString())),
+                ),
+              ),
             );
           }
         });
@@ -86,8 +93,19 @@ class _TranscriptionSettingsPageState extends State<TranscriptionSettingsPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Télécharger ${model.langText}'),
-        content: Text(
-          'Voulez-vous télécharger le modèle vocal pour ${model.langText} (${model.sizeText}) ?',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Voulez-vous télécharger le modèle vocal pour ${model.langText} (${model.sizeText}) ?',
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Ne quittez pas l\'écran et ne mettez pas l\'application en arrière-plan pendant le téléchargement.',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.redAccent),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -137,7 +155,13 @@ class _TranscriptionSettingsPageState extends State<TranscriptionSettingsPage> {
           _downloadProgress.remove(model.name);
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur lors du téléchargement: $e')),
+          SnackBar(
+            content: Text('Erreur lors du téléchargement: $e'),
+            action: SnackBarAction(
+              label: 'Copier',
+              onPressed: () => Clipboard.setData(ClipboardData(text: e.toString())),
+            ),
+          ),
         );
       }
     }
@@ -184,7 +208,13 @@ class _TranscriptionSettingsPageState extends State<TranscriptionSettingsPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur lors de la suppression: $e')),
+          SnackBar(
+            content: Text('Erreur lors de la suppression: $e'),
+            action: SnackBarAction(
+              label: 'Copier',
+              onPressed: () => Clipboard.setData(ClipboardData(text: e.toString())),
+            ),
+          ),
         );
       }
     }

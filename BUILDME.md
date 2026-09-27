@@ -1,10 +1,27 @@
 # BUILDME
 
-## Turso credentials
+## Hugging Face read token (private Fula model)
 
-Create `secrets.txt` at the project root with two lines: database URL, then auth token. The file is gitignored. The app reads it at startup from the project directory and from bundled assets when present.
+1. Put a **read-only** fine-grained token in `secret.txt` (gitignored), scoped to `flutter-painter/french-fula` repo content read.
+2. Obfuscate into the app:
 
-Build-time `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` values override `secrets.txt`.
+```bash
+dart run tool/embed_hf_token.dart
+```
+
+This writes `lib/generated/hf_token.g.dart` (XOR obfuscation — not real secret storage).
+
+## Turso credentials (training / legacy)
+
+Create `secrets.txt` at the project root with two lines: database URL, then auth token. The file is gitignored.
+
+## Publish french-fula Candle pack
+
+```bash
+HF_WRITE_TOKEN=hf_write_xxx python3 tool/publish_french_fula.py
+```
+
+Uploads `config.json`, `model.safetensors`, `tokenizer-enc.json`, `tokenizer-dec.json` from `assets/fr-pul/` (or set `CANDLE_SRC`).
 
 ## macOS
 
@@ -14,5 +31,3 @@ hdiutil create -volname "Malinali" -srcfolder "build/macos/Build/Products/Releas
 ## Run
 
 flutter run
-
-flutter run --dart-define=MALINALI_SKIP_AUTO_TURSO_SYNC=true

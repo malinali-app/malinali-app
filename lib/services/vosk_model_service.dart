@@ -385,6 +385,14 @@ class VoskModelService {
       _extractZip(archive, storageDir.path);
 
       return modelDir.path;
+    } catch (e) {
+      // If the download or extraction fails, cleanup the model directory
+      if (modelDir.existsSync()) {
+        try {
+          modelDir.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+      rethrow;
     } finally {
       if (tempZip.existsSync()) {
         try {

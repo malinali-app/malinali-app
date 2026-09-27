@@ -98,6 +98,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: TranslatePage(
           initialMarian: mockMarian,
+          initialModel: model,
           modelService: mockModelService,
         ),
       ));
@@ -105,11 +106,11 @@ void main() {
       await tester.pump();
     });
 
-    // Find the header text "Français → Pulaar" (default)
-    expect(find.textContaining('Français → Pulaar'), findsOneWidget);
+    // Find the header text for boot default FR→EN
+    expect(find.textContaining('Français → English'), findsOneWidget);
 
     // Click the language pair selector
-    await tester.tap(find.textContaining('Français → Pulaar'));
+    await tester.tap(find.textContaining('Français → English'));
     await tester.pump(); // Start navigation
     await tester.pump(const Duration(milliseconds: 500)); // Animation
     await tester.pump(); // Finish navigation

@@ -59,7 +59,7 @@ class SettingsPage extends StatelessWidget {
                 ),
               ),
               subtitle: const Text(
-                'Gérer et télécharger les modèles MarianMT',
+                'MarianMT hors-ligne + Bring Your Own (Hugging Face)',
                 style: TextStyle(fontSize: 13),
               ),
               trailing: const Icon(Icons.chevron_right),

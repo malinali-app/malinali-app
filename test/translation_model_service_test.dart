@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:languages_dart/languages_dart.dart';
 import 'package:malinali/services/translation_model_service.dart';
 
 void main() {
@@ -103,13 +104,57 @@ void main() {
       expect(models.first.sourceLang.name, 'Français');
     });
 
-    test('fetchAllAvailableModels fetches online models from Xenova and HF', () async {
+    test('dedupeByLanguagePair keeps a single fr→en preferring Xenova', () {
+      final service = TranslationModelService();
+      final models = [
+        TranslationModel(
+          sourceLang: Languages.french,
+          targetLang: Languages.english,
+          modelId: 'Helsinki-NLP/opus-mt-fr-en',
+        ),
+        TranslationModel(
+          sourceLang: Languages.french,
+          targetLang: Languages.english,
+          modelId: 'Xenova/opus-mt-fr-en',
+        ),
+        TranslationModel(
+          sourceLang: Languages.french,
+          targetLang: Languages.spanish,
+          modelId: 'Xenova/opus-mt-fr-es',
+        ),
+      ];
+      final deduped = service.dedupeByLanguagePair(models);
+      expect(deduped.length, 2);
+      final frEn = deduped.where((m) => m.pairKey == 'fr|en').toList();
+      expect(frEn.length, 1);
+      expect(frEn.first.modelId, 'Xenova/opus-mt-fr-en');
+    });
+
+    test('private Fula model is HF on-demand, not an asset', () {
+      final fula = TranslationModelService.privateModels.first;
+      expect(fula.modelId, 'flutter-painter/french-fula');
+      expect(fula.isAsset, isFalse);
+      expect(fula.requiresAuth, isTrue);
+      expect(fula.downloadSizeHint, '~285 Mo');
+    });
+
+    test('boot default is public Xenova FR→EN', () {
+      final boot = TranslationModelService.defaultBootModel;
+      expect(boot.modelId, 'Xenova/opus-mt-fr-en');
+      expect(boot.isAsset, isFalse);
+      expect(boot.requiresAuth, isFalse);
+    });
+
+    test('fetchAllAvailableModels includes private HF Fula and Xenova', () async {
       final service = TranslationModelService();
       final models = await service.fetchAllAvailableModels();
-      // Must contain private models (fr-pul) and online Xenova models
       expect(models.length, greaterThan(10));
-      expect(models.any((m) => m.modelId == 'assets/fr-pul'), isTrue);
+      expect(
+        models.any((m) => m.modelId == 'flutter-painter/french-fula'),
+        isTrue,
+      );
       expect(models.any((m) => m.modelId.startsWith('Xenova/')), isTrue);
+      expect(models.any((m) => m.modelId == 'assets/fr-pul'), isFalse);
     });
   });
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:malinali/pages/translate_page.dart';
+import 'package:malinali/services/translation_model_service.dart';
 import 'package:marian_flutter/marian_flutter.dart';
 
 class MalinaliApp extends StatelessWidget {
@@ -20,7 +21,8 @@ class MalinaliApp extends StatelessWidget {
   }
 }
 
-/// Loads the on-device Marian model, then opens [TranslatePage].
+/// Downloads the small public Xenova FR→EN model, then opens [TranslatePage].
+/// French→Pulaar is selected later in settings and downloads from Hugging Face.
 class MarianBootScreen extends StatefulWidget {
   const MarianBootScreen({super.key});
 
@@ -39,6 +41,8 @@ class _MarianBootScreenState extends State<MarianBootScreen> {
   }
 
   Future<void> _loadModel() async {
+    final modelService = TranslationModelService();
+    final bootModel = TranslationModelService.defaultBootModel;
     try {
       setState(() {
         _status = 'Initialisation Rust…';
@@ -47,11 +51,13 @@ class _MarianBootScreenState extends State<MarianBootScreen> {
       await MarianService.initRust();
 
       if (!mounted) return;
-      setState(() => _status = 'Préparation des fichiers du modèle…');
+      setState(() => _status = 'Téléchargement ${bootModel.modelId}…');
 
-      final marian = await MarianService.loadFromAssets(
-        assetFolder: 'assets/fr-pul',
-      );
+      final dir = await modelService.downloadModel(bootModel);
+
+      if (!mounted) return;
+      setState(() => _status = 'Chargement du modèle…');
+      final marian = await MarianService.loadFromDirectory(dir.path);
 
       // First Candle forward pays mmap / CPU warmup; do it off the translate UI.
       if (!mounted) return;
@@ -65,7 +71,10 @@ class _MarianBootScreenState extends State<MarianBootScreen> {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => TranslatePage(initialMarian: marian),
+          builder: (_) => TranslatePage(
+            initialMarian: marian,
+            initialModel: bootModel,
+          ),
         ),
       );
     } catch (e) {
@@ -79,45 +88,35 @@ class _MarianBootScreenState extends State<MarianBootScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_error != null) {
-      return Scaffold(
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (_error == null) const CircularProgressIndicator(),
+              const SizedBox(height: 24),
+              Text(
+                _status,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
                 const SizedBox(height: 16),
-                Text(_error!, textAlign: TextAlign.center),
-                const SizedBox(height: 24),
-                ElevatedButton(
+                FilledButton(
                   onPressed: _loadModel,
                   child: const Text('Réessayer'),
                 ),
               ],
-            ),
+            ],
           ),
-        ),
-      );
-    }
-
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                _status,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-            ),
-          ],
         ),
       ),
     );

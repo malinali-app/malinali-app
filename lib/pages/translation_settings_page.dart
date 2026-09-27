@@ -1,9 +1,8 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:malinali/pages/byo_marian_page.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/vosk_model_service.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 
 class TranslationSettingsPage extends StatefulWidget {
@@ -47,31 +46,9 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
       final models = await widget.modelService.fetchAllAvailableModels();
       final voskModels = await _voskService.fetchAllSmallModels();
       
-      final docs = await getApplicationDocumentsDirectory();
-      final String baseDir = Platform.isWindows
-          ? 'Malinali_do_not_delete/marian_models'
-          : 'marian_models';
-      
       final status = <String, bool>{};
       for (final model in models) {
-        if (model.isAsset) {
-          status[model.modelId] = true;
-          continue;
-        }
-        bool exists = false;
-        try {
-          final modelDir = Directory(
-            p.join(docs.path, baseDir, model.modelId.replaceAll('/', '_')),
-          );
-          exists = await modelDir.exists();
-          if (exists) {
-            final mainFile = File(p.join(modelDir.path, 'model.safetensors'));
-            exists = await mainFile.exists() && await mainFile.length() > 0;
-          }
-        } catch (_) {
-          exists = false;
-        }
-        status[model.modelId] = exists;
+        status[model.modelId] = await widget.modelService.isModelDownloaded(model);
       }
 
       final voskStatus = <String, bool>{};
@@ -95,7 +72,13 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Erreur: $e')),
+              SnackBar(
+                content: Text('Erreur: $e'),
+                action: SnackBarAction(
+                  label: 'Copier',
+                  onPressed: () => Clipboard.setData(ClipboardData(text: e.toString())),
+                ),
+              ),
             );
           }
         });
@@ -137,9 +120,61 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Modèles de traduction'),
+        actions: [
+          IconButton(
+            tooltip: 'Bring Your Own (Hugging Face)',
+            icon: const Icon(Icons.add_box_outlined),
+            onPressed: () async {
+              final model = await Navigator.push<TranslationModel>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ByoMarianPage(modelService: widget.modelService),
+                ),
+              );
+              if (!mounted) return;
+              if (model != null) {
+                Navigator.pop(context, model);
+                return;
+              }
+              await _loadModels();
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
+          Material(
+            color: const Color(0xFFEFF6FF),
+            child: InkWell(
+              onTap: () async {
+                final model = await Navigator.push<TranslationModel>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        ByoMarianPage(modelService: widget.modelService),
+                  ),
+                );
+                if (!mounted) return;
+                if (model != null) {
+                  Navigator.pop(context, model);
+                  return;
+                }
+                await _loadModels();
+              },
+              child: const ListTile(
+                leading: Icon(Icons.science_outlined, color: Color(0xFF1E3A8A)),
+                title: Text(
+                  'Avancé — Bring Your Own (Hugging Face)',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  'Ajouter un dépôt Marian/Candle (Xenova, finetune…)',
+                ),
+                trailing: Icon(Icons.chevron_right),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: TextField(
@@ -302,7 +337,13 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
                                               CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              'Le modèle de traduction pour ${model.displayName} doit être téléchargé (environ 150 Mo).',
+                                              'Le modèle de traduction pour ${model.displayName} doit être téléchargé'
+                                              ' (${model.downloadSizeHint ?? 'environ 150 Mo'}).',
+                                            ),
+                                            const SizedBox(height: 12),
+                                            const Text(
+                                              'Ne quittez pas l\'écran et ne mettez pas l\'application en arrière-plan pendant le téléchargement.',
+                                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.redAccent),
                                             ),
                                             if (hasVosk && !isVoskDownloaded) ...[
                                               const SizedBox(height: 12),
