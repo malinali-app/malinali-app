@@ -44,10 +44,6 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Large model files and datasets (should use Git LFS or external storage)
-# assets/models/*.onnx
-# assets/models/tokenizer.json
-
 # CocoaPods
 **/Pods/
 **/Podfile.lock
@@ -55,22 +51,30 @@ app.*.map.json
 # Local configuration
 **/local.properties
 
-# Documentation files (optional - remove if you want to track them)
-# INTEGRATION_COMPLETE.md
-# TRANSLATION_DIRECTION_FIX.md
 pubspec.lock
 macos/onnx_runtime
 malinali.dmg
 /doc_ai
 /assets/models/all-MiniLM-L6-v2.onnx
-pubspec.lock
 /BUILDME.md
 /assets/combined_src.txt
 /assets/combined_tgt.txt
-pubspec.lock
 assets/malinali.db
 /assets/fra-ful
 /secrets.txt
+/secret.txt
+/secret_write.txt
+/secret_turso.txt
 /tools
 BUILDME.md
 android/.kotlin/
+
+# Large Marian weights (copy via scripts/prepare_app_assets.sh)
+/assets/fr-pul/model.safetensors
+/assets/fr-pul/tokenizer-enc.json
+/assets/fr-pul/tokenizer-dec.json
+/assets/fr-pul/config.json
+/Xenova_opus-mt-fr-es
+er/build
+/ecrit
+/scripts/prepare_app_assets.sh

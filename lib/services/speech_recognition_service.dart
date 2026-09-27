@@ -1,174 +1,232 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
-import 'package:vosk_flutter/vosk_flutter.dart';
-import 'package:permission_handler/permission_handler.dart';
 
-/// Service for French speech recognition using Vosk
+import 'package:malinali/services/vosk_model_service.dart';
+import 'package:path/path.dart' as p;
+import 'package:record/record.dart';
+import 'package:vosk_flutter/vosk_flutter.dart';
+
+/// Cross-platform speech recognition via Vosk and microphone streaming.
+/// Supports both Android and Windows desktop.
 class SpeechRecognitionService {
-  final _vosk = VoskFlutterPlugin.instance();
-  final _modelLoader = ModelLoader();
-  
+  final VoskModelService _modelService;
+  AudioRecorder? _audioRecorder;
+  final AudioRecorder Function()? _recorderFactory;
+
+  VoskFlutterPlugin? _vosk;
   Model? _model;
   Recognizer? _recognizer;
-  SpeechService? _speechService;
-  
+  VoskModel? _currentModel;
+
   bool _isInitialized = false;
   bool _isListening = false;
-  
-  StreamSubscription<String>? _partialSubscription;
-  StreamSubscription<String>? _resultSubscription;
-  
-  // Callback for recognized text
+
+  StreamSubscription<List<int>>? _audioSubscription;
+
   Function(String)? onResult;
   Function(String)? onPartialResult;
   Function()? onError;
 
-  /// Initialize the Vosk model from assets
-  Future<void> initialize() async {
-    if (_isInitialized) return;
+  SpeechRecognitionService({
+    VoskModelService? modelService,
+    AudioRecorder? audioRecorder,
+    AudioRecorder Function()? recorderFactory,
+  })  : _modelService = modelService ?? VoskModelService(),
+        _audioRecorder = audioRecorder,
+        _recorderFactory = recorderFactory;
+
+  AudioRecorder _getRecorder() {
+    return _audioRecorder ??=
+        (_recorderFactory != null ? _recorderFactory() : AudioRecorder());
+  }
+
+  VoskModel? get currentModel => _currentModel;
+  bool get isInitialized => _isInitialized;
+  bool get isListening => _isListening;
+
+  /// Ensure Windows MinGW companion DLLs are preloaded to avoid error 127.
+  static void _ensureWindowsDllsLoaded() {
+    if (!Platform.isWindows) return;
+    try {
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
+      for (final name in [
+        'libwinpthread-1.dll',
+        'libgcc_s_seh-1.dll',
+        'libstdc++-6.dll',
+        'libvosk.dll',
+      ]) {
+        final dllFile = File(p.join(exeDir, name));
+        if (dllFile.existsSync()) {
+          try {
+            DynamicLibrary.open(dllFile.path);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Initialize with a specific [VoskModel] (defaults to French asset model).
+  Future<void> initialize({VoskModel? model}) async {
+    final targetModel = model ?? VoskModelService.assetFrenchModel;
+    if (_isInitialized && _currentModel?.name == targetModel.name) {
+      return;
+    }
 
     try {
-      // Check microphone permission
-      final permissionStatus = await Permission.microphone.request();
-      if (!permissionStatus.isGranted) {
-        throw Exception('Microphone permission not granted');
-      }
+      _ensureWindowsDllsLoaded();
+      _vosk ??= VoskFlutterPlugin.instance();
 
-      // Load model from zip file using ModelLoader
-      print('📦 Loading Vosk French model from zip file...');
-      final modelPath = await _modelLoader.loadFromAssets('assets/vosk-model-small-fr-0.22.zip');
-      print('✅ Model loaded from zip: $modelPath');
-      
-      // Create model object from extracted directory path
-      print('🔧 Creating model from: $modelPath');
-      _model = await _vosk.createModel(modelPath);
-      
-      // Create recognizer
-      _recognizer = await _vosk.createRecognizer(
+      // Dispose existing model and recognizer if any
+      await _disposeRecognizerAndModel();
+
+      final modelPath = await _modelService.getModelPath(targetModel);
+      _model = await _vosk!.createModel(modelPath);
+      _recognizer = await _vosk!.createRecognizer(
         model: _model!,
         sampleRate: 16000,
       );
-      
-      // For Android, initialize speech service
-      if (Platform.isAndroid) {
-        _speechService = await _vosk.initSpeechService(_recognizer!);
-      }
-      
+
+      _currentModel = targetModel;
       _isInitialized = true;
-      print('✅ Vosk speech recognition initialized');
     } catch (e) {
-      print('❌ Error initializing Vosk: $e');
+      _isInitialized = false;
       onError?.call();
       rethrow;
     }
   }
 
+  /// Switch the active VOSK model.
+  Future<void> switchModel(VoskModel model) async {
+    if (_isListening) {
+      await stopListening();
+    }
+    await initialize(model: model);
+  }
 
-  /// Start listening for speech
+  /// Start recording and streaming audio into the VOSK recognizer.
   Future<void> startListening() async {
     if (!_isInitialized) {
       await initialize();
     }
-
-    if (_isListening) {
-      return;
-    }
+    if (_isListening) return;
 
     try {
-      if (Platform.isAndroid && _speechService != null) {
-        // Android: Use SpeechService
-        await _speechService!.start();
-        
-        // Listen to partial results
-        _partialSubscription = _speechService!.onPartial().listen(
-          (partialText) {
-            final text = _extractTextFromJson(partialText);
-            if (text.isNotEmpty) {
-              onPartialResult?.call(text);
-            }
-          },
-          onError: (error) {
-            print('Partial result stream error: $error');
-            onError?.call();
-          },
-        );
-        
-        // Listen to final results
-        _resultSubscription = _speechService!.onResult().listen(
-          (resultText) {
-            final text = _extractTextFromJson(resultText);
-            if (text.isNotEmpty) {
-              onResult?.call(text);
-            }
-          },
-          onError: (error) {
-            print('Result stream error: $error');
-            onError?.call();
-          },
-        );
-      } else {
-        // Non-Android platforms would need record package
-        // For now, throw an error
-        throw Exception('Speech recognition is only supported on Android. For other platforms, use the record package.');
+      final recorder = _getRecorder();
+      final hasPermission = await recorder.hasPermission();
+      if (!hasPermission) {
+        throw Exception('Microphone permission not granted');
       }
-      
+
+      final stream = await recorder.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
+      );
+
       _isListening = true;
+
+      _audioSubscription = stream.listen(
+        (chunk) async {
+          if (!_isListening || _recognizer == null) return;
+          try {
+            final isFinal = await _recognizer!.acceptWaveformBytes(chunk);
+            if (isFinal) {
+              final jsonResult = await _recognizer!.getResult();
+              final text = _extractTextFromJson(jsonResult);
+              if (text.isNotEmpty) {
+                onResult?.call(text);
+              }
+            } else {
+              final jsonResult = await _recognizer!.getPartialResult();
+              final partial = _extractPartialFromJson(jsonResult);
+              if (partial.isNotEmpty) {
+                onPartialResult?.call(partial);
+              }
+            }
+          } catch (_) {
+            onError?.call();
+          }
+        },
+        onError: (_) {
+          _isListening = false;
+          onError?.call();
+        },
+      );
     } catch (e) {
-      print('Error starting speech recognition: $e');
       _isListening = false;
       onError?.call();
       rethrow;
     }
   }
 
-  /// Stop listening for speech
+  /// Stop listening and flush the final recognition result.
   Future<void> stopListening() async {
-    if (!_isListening) return;
-
     _isListening = false;
-    
-    // Cancel stream subscriptions immediately
-    await _partialSubscription?.cancel();
-    _partialSubscription = null;
-    await _resultSubscription?.cancel();
-    _resultSubscription = null;
-    
-    // Stop speech service (Android)
-    if (Platform.isAndroid && _speechService != null) {
-      try {
-        await _speechService!.stop();
-        print('✅ Speech service stopped');
-      } catch (e) {
-        print('❌ Error stopping speech service: $e');
-      }
-    }
-  }
 
-  /// Extract text from Vosk JSON result
-  String _extractTextFromJson(String jsonResult) {
     try {
-      // Vosk returns JSON like: {"text": "recognized text"}
-      // Simple extraction without full JSON parsing
-      final textMatch = RegExp(r'"text"\s*:\s*"([^"]*)"').firstMatch(jsonResult);
-      if (textMatch != null) {
-        return textMatch.group(1) ?? '';
+      await _audioSubscription?.cancel();
+      _audioSubscription = null;
+
+      final recorder = _audioRecorder;
+      if (recorder != null) {
+        try {
+          await recorder.stop();
+        } catch (_) {}
       }
-      return '';
-    } catch (e) {
-      print('Error parsing Vosk result: $e');
-      return '';
-    }
+
+      if (_recognizer != null) {
+        final jsonResult = await _recognizer!.getFinalResult();
+        final text = _extractTextFromJson(jsonResult);
+        if (text.isNotEmpty) {
+          onResult?.call(text);
+        }
+      }
+    } catch (_) {}
   }
 
-  /// Check if currently listening
-  bool get isListening => _isListening;
-
-  /// Dispose resources
-  void dispose() {
-    stopListening();
-    _speechService = null;
+  Future<void> _disposeRecognizerAndModel() async {
     _recognizer = null;
     _model = null;
+    _currentModel = null;
     _isInitialized = false;
+  }
+
+  String _extractTextFromJson(String jsonResult) {
+    try {
+      final decoded = jsonDecode(jsonResult);
+      if (decoded is Map<String, dynamic>) {
+        return (decoded['text'] as String? ?? '').trim();
+      }
+    } catch (_) {
+      final textMatch = RegExp(r'"text"\s*:\s*"([^"]*)"').firstMatch(jsonResult);
+      return (textMatch?.group(1) ?? '').trim();
+    }
+    return '';
+  }
+
+  String _extractPartialFromJson(String jsonResult) {
+    try {
+      final decoded = jsonDecode(jsonResult);
+      if (decoded is Map<String, dynamic>) {
+        return (decoded['partial'] as String? ?? '').trim();
+      }
+    } catch (_) {
+      final textMatch =
+          RegExp(r'"partial"\s*:\s*"([^"]*)"').firstMatch(jsonResult);
+      return (textMatch?.group(1) ?? '').trim();
+    }
+    return '';
+  }
+
+  void dispose() {
+    stopListening();
+    _audioRecorder?.dispose();
+    _audioRecorder = null;
+    _disposeRecognizerAndModel();
+    _vosk = null;
   }
 }
