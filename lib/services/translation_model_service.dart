@@ -57,7 +57,32 @@ class TranslationModel {
         'downloadSizeHint': downloadSizeHint,
       };
 
+  /// Full snapshot for last-selected-model persistence (boot / resume).
+  Map<String, dynamic> toPreferenceJson() => {
+        'modelId': modelId,
+        'sourceIso': sourceLang.localeIntl.locale.languageCode,
+        'targetIso': targetLang.localeIntl.locale.languageCode,
+        'sourceName': _sourceName,
+        'targetName': _targetName,
+        'requiresAuth': requiresAuth || (authToken != null && authToken!.isNotEmpty),
+        'authToken': authToken,
+        'isCustom': isCustom,
+        'isAsset': isAsset,
+        'downloadSizeHint': downloadSizeHint,
+      };
+
   static TranslationModel? fromJson(Map<String, dynamic> json) {
+    return _fromJsonMap(json, forceCustom: true);
+  }
+
+  static TranslationModel? fromPreferenceJson(Map<String, dynamic> json) {
+    return _fromJsonMap(json, forceCustom: false);
+  }
+
+  static TranslationModel? _fromJsonMap(
+    Map<String, dynamic> json, {
+    required bool forceCustom,
+  }) {
     final modelId = json['modelId'] as String?;
     if (modelId == null || modelId.isEmpty) return null;
     final sourceIso = (json['sourceIso'] as String? ?? '').toLowerCase();
@@ -96,10 +121,11 @@ class TranslationModel {
       sourceLang: source,
       targetLang: target,
       modelId: modelId,
+      isAsset: json['isAsset'] == true,
       requiresAuth: json['requiresAuth'] == true ||
           (token != null && token.isNotEmpty),
       authToken: token,
-      isCustom: true,
+      isCustom: forceCustom || json['isCustom'] == true,
       downloadSizeHint: json['downloadSizeHint'] as String?,
     );
   }

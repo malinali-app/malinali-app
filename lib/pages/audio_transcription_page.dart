@@ -20,6 +20,8 @@ class AudioTranscriptionPage extends StatefulWidget {
     this.voskModel,
     this.transcriptionService,
     this.initialAudioPath,
+    this.initialTranscript,
+    this.translationPairLabel,
   });
 
   final VoskModelService voskService;
@@ -29,6 +31,12 @@ class AudioTranscriptionPage extends StatefulWidget {
 
   /// Optional path for tests / deep links (e.g. shared WhatsApp note).
   final String? initialAudioPath;
+
+  /// Optional pre-filled transcript (tests / restore).
+  final String? initialTranscript;
+
+  /// Current translate pair label (e.g. "Français → Pulaar") for the action button.
+  final String? translationPairLabel;
 
   @override
   State<AudioTranscriptionPage> createState() => _AudioTranscriptionPageState();
@@ -77,6 +85,13 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _start();
       });
+    } else {
+      final seed = widget.initialTranscript?.trim();
+      if (seed != null && seed.isNotEmpty) {
+        _transcript = seed;
+        _phase = _AudioPhase.done;
+        _statusLabel = 'Terminé — vérifiez l’aperçu';
+      }
     }
   }
 
@@ -234,6 +249,18 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
 
   void _cancel() => setState(() => _cancelRequested = true);
 
+  void _sendToTranslate() {
+    final text = _transcript?.trim();
+    if (text == null || text.isEmpty) return;
+    Navigator.pop(context, text);
+  }
+
+  String get _translateButtonLabel {
+    final pair = widget.translationPairLabel?.trim();
+    if (pair == null || pair.isEmpty) return 'Traduire';
+    return 'Traduire ($pair)';
+  }
+
   @override
   Widget build(BuildContext context) {
     final showGlimpse = _showGlimpse;
@@ -376,6 +403,14 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
                   ],
                 ],
               ),
+              if (canExport) ...[
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: _sendToTranslate,
+                  icon: const Icon(Icons.translate),
+                  label: Text(_translateButtonLabel),
+                ),
+              ],
               const SizedBox(height: 8),
               Expanded(
                 child: Container(

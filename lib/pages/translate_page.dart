@@ -8,6 +8,7 @@ import 'package:malinali/pages/document_translation_page.dart';
 import 'package:malinali/pages/settings_page.dart';
 import 'package:malinali/pages/translation_settings_page.dart';
 import 'package:malinali/services/malinali_audio_open_intent.dart';
+import 'package:malinali/services/marian_runtime.dart';
 import 'package:malinali/services/speech_recognition_service.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/vosk_model_service.dart';
@@ -78,6 +79,7 @@ class _TranslatePageState extends State<TranslatePage> {
     _selectedModel = boot;
     _sourceLang = boot.sourceLang;
     _targetLang = boot.targetLang;
+    MarianRuntime.instance.attach(_marian, boot);
     _speech = widget.speechService ?? SpeechRecognitionService(modelService: _voskService);
 
     _inputController.addListener(() => setState(() {}));
@@ -185,61 +187,68 @@ class _TranslatePageState extends State<TranslatePage> {
     });
     await _refreshDownloadedStatus(models);
 
-    if (models.isNotEmpty) {
-      final currentTargetIso = _targetLang.localeIntl.locale.languageCode;
-      TranslationModel? nextModel;
+    if (models.isEmpty) return;
 
-      // Try to keep current target if available for the new source
-      for (final m in models) {
-        if (m.targetLang.localeIntl.locale.languageCode == currentTargetIso) {
-          nextModel = m;
-          break;
-        }
-      }
+    // Keep the boot / last-selected model; do not auto-switch on startup
+    // (that caused a second 5–10s load after MarianBootScreen).
+    final selectedId = _selectedModel?.modelId;
+    if (selectedId != null && models.any((m) => m.modelId == selectedId)) {
+      return;
+    }
 
-      // Otherwise default to the first one (e.g. Fula if available)
-      nextModel ??= models.first;
-      if (nextModel.modelId != _selectedModel?.modelId) {
-        final isDownloaded = nextModel.isAsset ||
-            (_downloadedStatus[nextModel.modelId] ?? false);
-        if (!isDownloaded) {
-          if (!mounted) return;
-          final confirm = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Téléchargement requis'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Le modèle de traduction pour ${nextModel!.displayName} doit être téléchargé'
-                    ' (${nextModel.downloadSizeHint ?? 'environ 150 Mo'}).',
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Ne quittez pas l\'écran et ne mettez pas l\'application en arrière-plan pendant le téléchargement.',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.redAccent),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Plus tard'),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Télécharger'),
-                ),
-              ],
-            ),
-          );
-          if (confirm != true) return;
-        }
-        await _switchModel(nextModel);
+    final currentTargetIso = _targetLang.localeIntl.locale.languageCode;
+    TranslationModel? nextModel;
+
+    // Try to keep current target if available for the new source
+    for (final m in models) {
+      if (m.targetLang.localeIntl.locale.languageCode == currentTargetIso) {
+        nextModel = m;
+        break;
       }
     }
+
+    // Otherwise default to the first one (e.g. Fula if available)
+    nextModel ??= models.first;
+    if (nextModel.modelId == _selectedModel?.modelId) return;
+
+    final isDownloaded = nextModel.isAsset ||
+        (_downloadedStatus[nextModel.modelId] ?? false);
+    if (!isDownloaded) {
+      if (!mounted) return;
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Téléchargement requis'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Le modèle de traduction pour ${nextModel!.displayName} doit être téléchargé'
+                ' (${nextModel.downloadSizeHint ?? 'environ 150 Mo'}).',
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Ne quittez pas l\'écran et ne mettez pas l\'application en arrière-plan pendant le téléchargement.',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.redAccent),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Plus tard'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Télécharger'),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+    }
+    await _switchModel(nextModel);
   }
 
   Future<void> _switchModel(TranslationModel model) async {
@@ -264,21 +273,23 @@ class _TranslatePageState extends State<TranslatePage> {
         marian = await MarianService.loadFromDirectory(dir.path);
       }
 
-      if (mounted) {
-        setState(() {
-          _marian = marian;
-          _selectedModel = model;
-          _targetLang = model.targetLang;
-          _sourceLang = model.sourceLang;
-          _loadingModel = false;
-          _output = '';
-          _downloadedStatus = {
-            ..._downloadedStatus,
-            model.modelId: true,
-          };
-        });
-        await _updateVoskModelForSource();
-      }
+      if (!mounted) return;
+      MarianRuntime.instance.attach(marian, model);
+      await MarianRuntime.saveLastSelectedModel(model);
+      if (!mounted) return;
+      setState(() {
+        _marian = marian;
+        _selectedModel = model;
+        _targetLang = model.targetLang;
+        _sourceLang = model.sourceLang;
+        _loadingModel = false;
+        _output = '';
+        _downloadedStatus = {
+          ..._downloadedStatus,
+          model.modelId: true,
+        };
+      });
+      await _updateVoskModelForSource();
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -440,9 +451,13 @@ class _TranslatePageState extends State<TranslatePage> {
     );
   }
 
-  void _openAudioTranscription({String? initialAudioPath}) {
+  Future<void> _openAudioTranscription({String? initialAudioPath}) async {
     if (_loadingModel) return;
-    Navigator.push(
+    final srcName =
+        _sourceLang.name.isEmpty ? _sourceLang.nameEn : _sourceLang.name;
+    final targetName =
+        _targetLang.name.isEmpty ? _targetLang.nameEn : _targetLang.name;
+    final transcript = await Navigator.push<String>(
       context,
       MaterialPageRoute(
         builder: (context) => AudioTranscriptionPage(
@@ -450,9 +465,21 @@ class _TranslatePageState extends State<TranslatePage> {
           speechService: _speech,
           voskModel: _matchingVoskModel ?? VoskModelService.assetFrenchModel,
           initialAudioPath: initialAudioPath,
+          translationPairLabel: '$srcName → $targetName',
         ),
       ),
     );
+    if (!mounted) return;
+    final text = transcript?.trim();
+    if (text == null || text.isEmpty) return;
+
+    _inputController.text = text;
+    _inputController.selection = TextSelection.collapsed(offset: text.length);
+    setState(() {
+      _output = '';
+      _error = null;
+    });
+    await _translate();
   }
 
   void _showSettings() async {
@@ -499,121 +526,157 @@ class _TranslatePageState extends State<TranslatePage> {
         _sourceLang.name.isEmpty ? _sourceLang.nameEn : _sourceLang.name;
     final targetName =
         _targetLang.name.isEmpty ? _targetLang.nameEn : _targetLang.name;
+    const headerIconConstraints = BoxConstraints(minWidth: 40, minHeight: 40);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 8.0),
+          padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
           child: Row(
             children: [
-              InkWell(
-                onTap: _loadingModel ? null : _openTranslationModelPicker,
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10.0, vertical: 6.0),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: MalinaliChrome.blueChip,
-                      width: 1.5,
+              Flexible(
+                child: InkWell(
+                  onTap: _loadingModel ? null : _openTranslationModelPicker,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10.0,
+                      vertical: 6.0,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: MalinaliChrome.blueChip,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text.rich(
+                            TextSpan(
+                              style: const TextStyle(
+                                fontFamily: 'NotoSans',
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              children: [
+                                TextSpan(
+                                  text: srcName,
+                                  style: const TextStyle(
+                                    color: MalinaliChrome.sourceText,
+                                  ),
+                                ),
+                                const TextSpan(
+                                  text: ' → ',
+                                  style: TextStyle(
+                                    color: MalinaliChrome.onBlue,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: targetName,
+                                  style: const TextStyle(
+                                    color: MalinaliChrome.targetText,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 20,
+                          color: MalinaliChrome.onBlue,
+                        ),
+                      ],
                     ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text.rich(
-                        TextSpan(
-                          style: const TextStyle(
-                            fontFamily: 'NotoSans',
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
+                ),
+              ),
+              if (_loadingModel) ...[
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.sizeOf(context).width * 0.48,
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                          border:
+                              Border.all(color: MalinaliChrome.yellowBorder),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            TextSpan(
-                              text: srcName,
-                              style: const TextStyle(
-                                color: MalinaliChrome.sourceText,
+                            const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: MalinaliChrome.yellowBorder,
                               ),
                             ),
-                            const TextSpan(
-                              text: ' → ',
-                              style: TextStyle(
-                                color: MalinaliChrome.onBlue,
-                              ),
-                            ),
-                            TextSpan(
-                              text: targetName,
-                              style: const TextStyle(
-                                color: MalinaliChrome.targetText,
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                _loadingModelLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontFamily: 'NotoSans',
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: MalinaliChrome.onBlue,
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      const Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: 20,
-                        color: MalinaliChrome.onBlue,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-              const Spacer(),
-              if (_loadingModel)
-                Container(
-                  margin: const EdgeInsets.only(right: 8),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: MalinaliChrome.yellowBorder),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: MalinaliChrome.yellowBorder,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _loadingModelLabel,
-                        style: const TextStyle(
-                          fontFamily: 'NotoSans',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: MalinaliChrome.onBlue,
-                        ),
-                      ),
-                    ],
-                  ),
+              ] else
+                const Spacer(),
+              // Hide unused actions while downloading so the status chip stays on-screen.
+              if (!_loadingModel) ...[
+                IconButton(
+                  icon: const Icon(Icons.audio_file_outlined),
+                  tooltip: 'Audio → texte (.opus)',
+                  color: MalinaliChrome.onBlue,
+                  visualDensity: VisualDensity.compact,
+                  constraints: headerIconConstraints,
+                  onPressed: _openAudioTranscription,
                 ),
-              IconButton(
-                icon: const Icon(Icons.audio_file_outlined),
-                tooltip: 'Audio → texte (.opus)',
-                color: MalinaliChrome.onBlue,
-                onPressed: _loadingModel ? null : _openAudioTranscription,
-              ),
-              IconButton(
-                icon: const Icon(Icons.description_outlined),
-                tooltip: 'Traduire un document',
-                color: MalinaliChrome.onBlue,
-                onPressed: _loadingModel ? null : _openDocumentTranslation,
-              ),
+                IconButton(
+                  icon: const Icon(Icons.description_outlined),
+                  tooltip: 'Traduire un document',
+                  color: MalinaliChrome.onBlue,
+                  visualDensity: VisualDensity.compact,
+                  constraints: headerIconConstraints,
+                  onPressed: _openDocumentTranslation,
+                ),
+              ],
               IconButton(
                 icon: const Icon(Icons.settings_outlined),
                 tooltip: 'Paramètres',
                 color: MalinaliChrome.onBlue,
+                visualDensity: VisualDensity.compact,
+                constraints: headerIconConstraints,
                 onPressed: _showSettings,
               ),
             ],

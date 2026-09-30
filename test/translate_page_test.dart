@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
+import 'package:malinali/pages/audio_transcription_page.dart';
 import 'package:malinali/pages/translate_page.dart';
 import 'package:malinali/pages/settings_page.dart';
 import 'package:malinali/pages/translation_settings_page.dart';
+import 'package:malinali/services/malinali_audio_open_intent.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:languages_dart/languages_dart.dart';
 import 'package:malinali/services/speech_recognition_service.dart';
@@ -75,6 +77,7 @@ void main() {
   setUp(() {
     mockModelService = MockTranslationModelService();
     mockMarian = MockMarianService();
+    MalinaliAudioOpenIntent.instance.resetForTest();
     const MethodChannel('plugins.flutter.io/path_provider')
         .setMockMethodCallHandler((MethodCall methodCall) async {
       if (methodCall.method == 'getApplicationDocumentsDirectory') {
@@ -82,6 +85,10 @@ void main() {
       }
       return null;
     });
+  });
+
+  tearDown(() {
+    MalinaliAudioOpenIntent.instance.resetForTest();
   });
 
   testWidgets('TranslatePage language pair selector is clickable and opens TranslationSettingsPage', (WidgetTester tester) async {
@@ -238,5 +245,37 @@ void main() {
 
     // Mic icon returns to idle
     expect(find.byIcon(Icons.mic_none), findsOneWidget);
+  });
+
+  testWidgets(
+      'pending WhatsApp audio share opens AudioTranscriptionPage',
+      (WidgetTester tester) async {
+    final fakeSpeech = FakeSpeechRecognitionService();
+    MalinaliAudioOpenIntent.instance.setPendingPath(
+      '/cache/shared_PTT-20260928-WA0003.opus',
+    );
+
+    when(mockModelService.fetchAvailableModels(any))
+        .thenAnswer((_) async => []);
+    when(mockModelService.fetchAllAvailableModels())
+        .thenAnswer((_) async => []);
+
+    await tester.runAsync(() async {
+      await tester.pumpWidget(MaterialApp(
+        home: TranslatePage(
+          initialMarian: mockMarian,
+          modelService: mockModelService,
+          speechService: fakeSpeech,
+        ),
+      ));
+      await Future.delayed(const Duration(milliseconds: 500));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+    });
+
+    expect(find.byType(AudioTranscriptionPage), findsOneWidget);
+    expect(find.byType(TranslatePage), findsOneWidget);
+    // Pending was consumed so a rebuild does not open a second route.
+    expect(MalinaliAudioOpenIntent.instance.hasPending, isFalse);
   });
 }

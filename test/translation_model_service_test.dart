@@ -156,5 +156,33 @@ void main() {
       expect(models.any((m) => m.modelId.startsWith('Xenova/')), isTrue);
       expect(models.any((m) => m.modelId == 'assets/fr-pul'), isFalse);
     });
+
+    test('preference JSON round-trips non-custom boot model fields', () {
+      final boot = TranslationModelService.defaultBootModel;
+      final restored = TranslationModel.fromPreferenceJson(boot.toPreferenceJson());
+      expect(restored, isNotNull);
+      expect(restored!.modelId, boot.modelId);
+      expect(restored.isCustom, isFalse);
+      expect(restored.isAsset, isFalse);
+      expect(restored.requiresAuth, isFalse);
+      expect(
+        restored.sourceLang.localeIntl.locale.languageCode,
+        'fr',
+      );
+      expect(
+        restored.targetLang.localeIntl.locale.languageCode,
+        'en',
+      );
+    });
+
+    test('preference JSON round-trips private Fula model', () {
+      final fula = TranslationModelService.privateModels.first;
+      final restored = TranslationModel.fromPreferenceJson(fula.toPreferenceJson());
+      expect(restored, isNotNull);
+      expect(restored!.modelId, fula.modelId);
+      expect(restored.requiresAuth, isTrue);
+      expect(restored.isCustom, isFalse);
+      expect(restored.downloadSizeHint, fula.downloadSizeHint);
+    });
   });
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:malinali/pages/translate_page.dart';
+import 'package:malinali/services/marian_runtime.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/theme/malinali_chrome.dart';
 import 'package:marian_flutter/marian_flutter.dart';
@@ -18,8 +19,11 @@ class MalinaliApp extends StatelessWidget {
   }
 }
 
-/// Downloads the small public Xenova FR→EN model, then opens [TranslatePage].
-/// French→Pulaar is selected later in settings and downloads from Hugging Face.
+/// Loads the preferred Marian model once, then opens [TranslatePage].
+///
+/// Reuses [MarianRuntime] when the process is still alive so background/resume
+/// does not re-show this screen. On cold start, restores the last selected
+/// model when already downloaded.
 class MarianBootScreen extends StatefulWidget {
   const MarianBootScreen({super.key});
 
@@ -37,9 +41,26 @@ class _MarianBootScreenState extends State<MarianBootScreen> {
     _loadModel();
   }
 
+  Future<void> _openTranslate(MarianService marian, TranslationModel model) {
+    return Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => TranslatePage(
+          initialMarian: marian,
+          initialModel: model,
+        ),
+      ),
+    );
+  }
+
   Future<void> _loadModel() async {
+    final runtime = MarianRuntime.instance;
+    if (runtime.isReady) {
+      if (!mounted) return;
+      await _openTranslate(runtime.marian!, runtime.model!);
+      return;
+    }
+
     final modelService = TranslationModelService();
-    final bootModel = TranslationModelService.defaultBootModel;
     try {
       setState(() {
         _status = 'Initialisation Rust…';
@@ -48,32 +69,29 @@ class _MarianBootScreenState extends State<MarianBootScreen> {
       await MarianService.initRust();
 
       if (!mounted) return;
-      setState(() => _status = 'Téléchargement ${bootModel.modelId}…');
+      final bootModel = await MarianRuntime.resolveBootModel(modelService);
+      setState(() => _status = 'Chargement ${bootModel.displayName}…');
 
-      final dir = await modelService.downloadModel(bootModel);
-
-      if (!mounted) return;
-      setState(() => _status = 'Chargement du modèle…');
-      final marian = await MarianService.loadFromDirectory(dir.path);
-
-      // First Candle forward pays mmap / CPU warmup; do it off the translate UI.
-      if (!mounted) return;
-      setState(() => _status = 'Préparation de la traduction…');
-      try {
-        await marian.translate('Bonjour');
-      } catch (_) {
-        // Warmup is best-effort; real errors still surface on user translate.
+      MarianService marian;
+      if (bootModel.isAsset) {
+        marian = await MarianService.loadFromAssets(
+          assetFolder: bootModel.modelId,
+        );
+      } else {
+        final dir = await modelService.downloadModel(bootModel);
+        if (!mounted) return;
+        setState(() => _status = 'Chargement du modèle…');
+        marian = await MarianService.loadFromDirectory(dir.path);
       }
 
+      runtime.attach(marian, bootModel);
+      await MarianRuntime.saveLastSelectedModel(bootModel);
+
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => TranslatePage(
-            initialMarian: marian,
-            initialModel: bootModel,
-          ),
-        ),
-      );
+      await _openTranslate(marian, bootModel);
+
+      // Warmup off the critical path so resume / cold start feels snappier.
+      marian.translate('Bonjour').then((_) {}, onError: (_) {});
     } catch (e) {
       if (!mounted) return;
       setState(() {
