@@ -3,6 +3,8 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  ffmpeg_kit_flutter_new_audio
+  file_selector_linux
   record_linux
   url_launcher_linux
   vosk_flutter

@@ -3,6 +3,7 @@ import 'package:malinali/pages/transcription_settings_page.dart';
 import 'package:malinali/pages/translation_settings_page.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/vosk_model_service.dart';
+import 'package:malinali/theme/malinali_chrome.dart';
 
 /// Settings hub with two distinct tiles:
 /// - Traduction (MarianMT text translation models)
@@ -31,23 +32,18 @@ class SettingsPage extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 8.0),
         children: [
           Card(
-            elevation: 1,
-            margin: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 4.0),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
             child: ListTile(
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
               leading: Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
+                  color: MalinaliChrome.blueAction.withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(
+                child: const Icon(
                   Icons.translate,
-                  color: Colors.blue.shade700,
+                  color: MalinaliChrome.yellowBorder,
                   size: 26,
                 ),
               ),
@@ -81,23 +77,18 @@ class SettingsPage extends StatelessWidget {
             ),
           ),
           Card(
-            elevation: 1,
-            margin: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 4.0),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
             child: ListTile(
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
               leading: Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
+                  color: MalinaliChrome.yellowBorder.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(
+                child: const Icon(
                   Icons.mic,
-                  color: Colors.orange.shade800,
+                  color: MalinaliChrome.yellowBorder,
                   size: 26,
                 ),
               ),

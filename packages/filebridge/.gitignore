@@ -1,0 +1,8 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+.dart_tool/
+.packages
+.pub/
+build/

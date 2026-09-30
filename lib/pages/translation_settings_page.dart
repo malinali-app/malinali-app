@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:malinali/pages/byo_marian_page.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/vosk_model_service.dart';
+import 'package:malinali/theme/malinali_chrome.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class TranslationSettingsPage extends StatefulWidget {
@@ -146,6 +147,7 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: TextField(
+              style: const TextStyle(color: MalinaliChrome.onBlue),
               decoration: InputDecoration(
                 hintText: 'Rechercher une langue...',
                 prefixIcon: const Icon(Icons.search),
@@ -176,7 +178,10 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
             child: Row(
               children: [
-                const Text('Filtrer par : '),
+                const Text(
+                  'Filtrer par : ',
+                  style: TextStyle(color: MalinaliChrome.onBlue),
+                ),
                 ChoiceChip(
                   label: const Text('Source'),
                   selected: _searchSource,
@@ -199,7 +204,13 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
                   },
                 ),
                 const Spacer(),
-                const Text('Téléchargé', style: TextStyle(fontSize: 12)),
+                const Text(
+                  'Téléchargé',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: MalinaliChrome.mutedOnBlue,
+                  ),
+                ),
                 Transform.scale(
                   scale: 0.8,
                   child: Switch(
@@ -220,7 +231,12 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredModels.isEmpty
-                    ? const Center(child: Text('Aucun modèle trouvé'))
+                    ? const Center(
+                        child: Text(
+                          'Aucun modèle trouvé',
+                          style: TextStyle(color: MalinaliChrome.mutedOnBlue),
+                        ),
+                      )
                     : ListView.builder(
                         itemCount: _filteredModels.length,
                         itemBuilder: (context, index) {
@@ -235,12 +251,16 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
                               hasVosk && (_voskDownloadedStatus[voskModel.name] ?? false);
 
                           return ListTile(
-                            tileColor: model.isCustom ? const Color(0xFFF0FDF4) : null,
+                            tileColor: model.isCustom
+                                ? MalinaliChrome.customPanel
+                                : null,
                             leading: Icon(
                               model.isAsset || isDownloaded
                                   ? Icons.storage
                                   : Icons.cloud_download,
-                              color: isSelected ? Colors.blue : Colors.grey,
+                              color: isSelected
+                                  ? MalinaliChrome.yellowBorder
+                                  : MalinaliChrome.mutedOnBlue,
                             ),
                             title: Row(
                               children: [
@@ -251,6 +271,7 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
                                       fontWeight: isSelected
                                           ? FontWeight.bold
                                           : FontWeight.normal,
+                                      color: MalinaliChrome.onBlue,
                                     ),
                                   ),
                                 ),
@@ -263,8 +284,8 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
                                       Icons.mic,
                                       size: 18,
                                       color: isVoskDownloaded
-                                          ? Colors.green
-                                          : Colors.blue.shade300,
+                                          ? MalinaliChrome.success
+                                          : MalinaliChrome.blueChip,
                                     ),
                                   ),
                               ],
@@ -283,7 +304,10 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
                                     onPressed: () => _launchHF(model.modelId),
                                   ),
                                 if (isSelected)
-                                  const Icon(Icons.check, color: Colors.blue),
+                                  const Icon(
+                                    Icons.check,
+                                    color: MalinaliChrome.yellowBorder,
+                                  ),
                               ],
                             ),
                             onTap: () async {

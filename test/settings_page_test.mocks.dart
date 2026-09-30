@@ -5,10 +5,10 @@
 // ignore_for_file: no_leading_underscores_for_library_prefixes
 
 import 'dart:async' as _i4;
-import 'dart:io' as _i2;
+import 'dart:io' as _i3;
 
 import 'package:languages_dart/languages_dart.dart' as _i5;
-import 'package:malinali/services/translation_model_service.dart' as _i3;
+import 'package:malinali/services/translation_model_service.dart' as _i2;
 import 'package:mockito/mockito.dart' as _i1;
 
 // ignore_for_file: type=lint
@@ -26,8 +26,14 @@ import 'package:mockito/mockito.dart' as _i1;
 // ignore_for_file: subtype_of_sealed_class
 // ignore_for_file: invalid_use_of_internal_member
 
-class _FakeDirectory_0 extends _i1.SmartFake implements _i2.Directory {
-  _FakeDirectory_0(Object parent, Invocation parentInvocation)
+class _FakeTranslationModel_0 extends _i1.SmartFake
+    implements _i2.TranslationModel {
+  _FakeTranslationModel_0(Object parent, Invocation parentInvocation)
+    : super(parent, parentInvocation);
+}
+
+class _FakeDirectory_1 extends _i1.SmartFake implements _i3.Directory {
+  _FakeDirectory_1(Object parent, Invocation parentInvocation)
     : super(parent, parentInvocation);
 }
 
@@ -35,43 +41,160 @@ class _FakeDirectory_0 extends _i1.SmartFake implements _i2.Directory {
 ///
 /// See the documentation for Mockito's code generation for more information.
 class MockTranslationModelService extends _i1.Mock
-    implements _i3.TranslationModelService {
+    implements _i2.TranslationModelService {
   MockTranslationModelService() {
     _i1.throwOnMissingStub(this);
   }
 
   @override
-  _i4.Future<List<_i3.TranslationModel>> fetchAllAvailableModels() =>
+  _i4.Future<List<_i2.TranslationModel>> fetchAllAvailableModels() =>
       (super.noSuchMethod(
             Invocation.method(#fetchAllAvailableModels, []),
-            returnValue: _i4.Future<List<_i3.TranslationModel>>.value(
-              <_i3.TranslationModel>[],
+            returnValue: _i4.Future<List<_i2.TranslationModel>>.value(
+              <_i2.TranslationModel>[],
             ),
           )
-          as _i4.Future<List<_i3.TranslationModel>>);
+          as _i4.Future<List<_i2.TranslationModel>>);
 
   @override
-  _i4.Future<List<_i3.TranslationModel>> fetchAvailableModels(
+  List<_i2.TranslationModel> dedupeByLanguagePair(
+    List<_i2.TranslationModel>? models,
+  ) =>
+      (super.noSuchMethod(
+            Invocation.method(#dedupeByLanguagePair, [models]),
+            returnValue: <_i2.TranslationModel>[],
+          )
+          as List<_i2.TranslationModel>);
+
+  @override
+  _i2.TranslationModel? preferredModelForPair(
+    List<_i2.TranslationModel>? models, {
+    required String? sourceIso,
+    required String? targetIso,
+  }) =>
+      (super.noSuchMethod(
+            Invocation.method(
+              #preferredModelForPair,
+              [models],
+              {#sourceIso: sourceIso, #targetIso: targetIso},
+            ),
+          )
+          as _i2.TranslationModel?);
+
+  @override
+  _i4.Future<List<_i2.TranslationModel>> loadCustomModels() =>
+      (super.noSuchMethod(
+            Invocation.method(#loadCustomModels, []),
+            returnValue: _i4.Future<List<_i2.TranslationModel>>.value(
+              <_i2.TranslationModel>[],
+            ),
+          )
+          as _i4.Future<List<_i2.TranslationModel>>);
+
+  @override
+  _i4.Future<void> saveCustomModels(List<_i2.TranslationModel>? models) =>
+      (super.noSuchMethod(
+            Invocation.method(#saveCustomModels, [models]),
+            returnValue: _i4.Future<void>.value(),
+            returnValueForMissingStub: _i4.Future<void>.value(),
+          )
+          as _i4.Future<void>);
+
+  @override
+  _i4.Future<_i2.TranslationModel> registerHuggingFaceModel({
+    required String? repoId,
+    String? authToken,
+    _i5.Language? sourceLang,
+    _i5.Language? targetLang,
+  }) =>
+      (super.noSuchMethod(
+            Invocation.method(#registerHuggingFaceModel, [], {
+              #repoId: repoId,
+              #authToken: authToken,
+              #sourceLang: sourceLang,
+              #targetLang: targetLang,
+            }),
+            returnValue: _i4.Future<_i2.TranslationModel>.value(
+              _FakeTranslationModel_0(
+                this,
+                Invocation.method(#registerHuggingFaceModel, [], {
+                  #repoId: repoId,
+                  #authToken: authToken,
+                  #sourceLang: sourceLang,
+                  #targetLang: targetLang,
+                }),
+              ),
+            ),
+          )
+          as _i4.Future<_i2.TranslationModel>);
+
+  @override
+  _i4.Future<void> removeCustomModel(String? modelId) =>
+      (super.noSuchMethod(
+            Invocation.method(#removeCustomModel, [modelId]),
+            returnValue: _i4.Future<void>.value(),
+            returnValueForMissingStub: _i4.Future<void>.value(),
+          )
+          as _i4.Future<void>);
+
+  @override
+  _i4.Future<List<_i2.TranslationModel>> fetchAvailableModels(
     _i5.Language? sourceLang,
   ) =>
       (super.noSuchMethod(
             Invocation.method(#fetchAvailableModels, [sourceLang]),
-            returnValue: _i4.Future<List<_i3.TranslationModel>>.value(
-              <_i3.TranslationModel>[],
+            returnValue: _i4.Future<List<_i2.TranslationModel>>.value(
+              <_i2.TranslationModel>[],
             ),
           )
-          as _i4.Future<List<_i3.TranslationModel>>);
+          as _i4.Future<List<_i2.TranslationModel>>);
 
   @override
-  _i4.Future<_i2.Directory> downloadModel(_i3.TranslationModel? model) =>
+  void parseAndAddModelsForTesting(
+    List<dynamic>? data,
+    List<_i2.TranslationModel>? models, {
+    _i5.Language? sourceLang,
+    Set<String>? safeNames,
+  }) => super.noSuchMethod(
+    Invocation.method(
+      #parseAndAddModelsForTesting,
+      [data, models],
+      {#sourceLang: sourceLang, #safeNames: safeNames},
+    ),
+    returnValueForMissingStub: null,
+  );
+
+  @override
+  _i4.Future<_i3.Directory> modelDirectory(_i2.TranslationModel? model) =>
+      (super.noSuchMethod(
+            Invocation.method(#modelDirectory, [model]),
+            returnValue: _i4.Future<_i3.Directory>.value(
+              _FakeDirectory_1(
+                this,
+                Invocation.method(#modelDirectory, [model]),
+              ),
+            ),
+          )
+          as _i4.Future<_i3.Directory>);
+
+  @override
+  _i4.Future<bool> isModelDownloaded(_i2.TranslationModel? model) =>
+      (super.noSuchMethod(
+            Invocation.method(#isModelDownloaded, [model]),
+            returnValue: _i4.Future<bool>.value(false),
+          )
+          as _i4.Future<bool>);
+
+  @override
+  _i4.Future<_i3.Directory> downloadModel(_i2.TranslationModel? model) =>
       (super.noSuchMethod(
             Invocation.method(#downloadModel, [model]),
-            returnValue: _i4.Future<_i2.Directory>.value(
-              _FakeDirectory_0(
+            returnValue: _i4.Future<_i3.Directory>.value(
+              _FakeDirectory_1(
                 this,
                 Invocation.method(#downloadModel, [model]),
               ),
             ),
           )
-          as _i4.Future<_i2.Directory>);
+          as _i4.Future<_i3.Directory>);
 }

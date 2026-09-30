@@ -161,7 +161,7 @@ void main() {
           modelService: mockModelService,
         ),
       ));
-      await Future.delayed(const Duration(milliseconds: 200));
+      await Future.delayed(const Duration(milliseconds: 500));
       await tester.pump();
     });
 
@@ -192,7 +192,7 @@ void main() {
           speechService: fakeSpeech,
         ),
       ));
-      await Future.delayed(const Duration(milliseconds: 200));
+      await Future.delayed(const Duration(milliseconds: 500));
       await tester.pump();
     });
 

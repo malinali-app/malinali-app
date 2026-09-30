@@ -1,29 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:languages_dart/languages_dart.dart';
+import 'package:malinali/pages/audio_transcription_page.dart';
+import 'package:malinali/pages/document_translation_page.dart';
 import 'package:malinali/pages/settings_page.dart';
 import 'package:malinali/pages/translation_settings_page.dart';
 import 'package:malinali/services/speech_recognition_service.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/vosk_model_service.dart';
+import 'package:malinali/theme/malinali_chrome.dart';
 import 'package:malinali/widgets/language_picker_sheet.dart';
 import 'package:marian_flutter/marian_flutter.dart';
 import 'package:share_plus/share_plus.dart';
-
-/// Brand chrome (main translate screen): blue field, yellow frames, thin red CTA accent.
-abstract final class _MalinaliChrome {
-  static const blueBg = Color(0xFF1E3A8A);
-  /// Darker panel fill for source / target text zones.
-  static const bluePanel = Color(0xFF0B1F4A);
-  static const blueAction = Color(0xFF2563EB);
-  static const yellowBorder = Color(0xFFFACC15);
-  static const redAccent = Color(0xFFDC2626);
-  static const onBlue = Color(0xFFF8FAFC);
-  /// Source text: very light white on dark blue.
-  static const sourceText = Color(0xFFF8FAFC);
-  /// Target text: very light yellow on dark blue.
-  static const targetText = Color(0xFFFEF08A);
-}
 
 /// Language-agnostic translate screen (MarianMT + dynamic Vosk mic).
 class TranslatePage extends StatefulWidget {
@@ -49,6 +37,7 @@ class TranslatePage extends StatefulWidget {
 class _TranslatePageState extends State<TranslatePage> {
   final _inputController = TextEditingController();
   final _inputFocusNode = FocusNode();
+  final _inputScrollController = ScrollController();
   late final TranslationModelService _modelService;
   late final VoskModelService _voskService;
 
@@ -286,6 +275,7 @@ class _TranslatePageState extends State<TranslatePage> {
     _speech?.dispose();
     _inputController.dispose();
     _inputFocusNode.dispose();
+    _inputScrollController.dispose();
     super.dispose();
   }
 
@@ -413,7 +403,35 @@ class _TranslatePageState extends State<TranslatePage> {
 
   Future<void> _shareOutput() async {
     if (_output.isEmpty) return;
-    await Share.share(_output);
+    await SharePlus.instance.share(ShareParams(text: _output));
+  }
+
+  void _openDocumentTranslation() {
+    final model = _selectedModel;
+    if (model == null || _loadingModel) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DocumentTranslationPage(
+          marian: _marian,
+          model: model,
+        ),
+      ),
+    );
+  }
+
+  void _openAudioTranscription() {
+    if (_loadingModel) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AudioTranscriptionPage(
+          voskService: _voskService,
+          speechService: _speech,
+          voskModel: _matchingVoskModel ?? VoskModelService.assetFrenchModel,
+        ),
+      ),
+    );
   }
 
   void _showSettings() async {
@@ -460,7 +478,6 @@ class _TranslatePageState extends State<TranslatePage> {
         _sourceLang.name.isEmpty ? _sourceLang.nameEn : _sourceLang.name;
     final targetName =
         _targetLang.name.isEmpty ? _targetLang.nameEn : _targetLang.name;
-    final hasVosk = _matchingVoskModel != null;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -476,45 +493,50 @@ class _TranslatePageState extends State<TranslatePage> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10.0, vertical: 6.0),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.12),
+                    color: Colors.white.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color: _MalinaliChrome.yellowBorder,
+                      color: MalinaliChrome.blueChip,
                       width: 1.5,
                     ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        '$srcName → $targetName',
-                        style: const TextStyle(
-                          fontFamily: 'NotoSans',
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: _MalinaliChrome.onBlue,
+                      Text.rich(
+                        TextSpan(
+                          style: const TextStyle(
+                            fontFamily: 'NotoSans',
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          children: [
+                            TextSpan(
+                              text: srcName,
+                              style: const TextStyle(
+                                color: MalinaliChrome.sourceText,
+                              ),
+                            ),
+                            const TextSpan(
+                              text: ' → ',
+                              style: TextStyle(
+                                color: MalinaliChrome.onBlue,
+                              ),
+                            ),
+                            TextSpan(
+                              text: targetName,
+                              style: const TextStyle(
+                                color: MalinaliChrome.targetText,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      if (hasVosk) ...[
-                        const SizedBox(width: 6),
-                        Tooltip(
-                          message: _isVoskModelDownloaded
-                              ? 'Saisie vocale prête (${_matchingVoskModel!.langText})'
-                              : 'Saisie vocale disponible (${_matchingVoskModel!.langText})',
-                          child: Icon(
-                            Icons.mic,
-                            size: 18,
-                            color: _isVoskModelDownloaded
-                                ? Colors.greenAccent.shade200
-                                : _MalinaliChrome.yellowBorder,
-                          ),
-                        ),
-                      ],
                       const SizedBox(width: 4),
                       const Icon(
                         Icons.keyboard_arrow_down_rounded,
                         size: 20,
-                        color: _MalinaliChrome.onBlue,
+                        color: MalinaliChrome.onBlue,
                       ),
                     ],
                   ),
@@ -529,7 +551,7 @@ class _TranslatePageState extends State<TranslatePage> {
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _MalinaliChrome.yellowBorder),
+                    border: Border.all(color: MalinaliChrome.yellowBorder),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -539,7 +561,7 @@ class _TranslatePageState extends State<TranslatePage> {
                         height: 12,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: _MalinaliChrome.yellowBorder,
+                          color: MalinaliChrome.yellowBorder,
                         ),
                       ),
                       const SizedBox(width: 6),
@@ -549,27 +571,39 @@ class _TranslatePageState extends State<TranslatePage> {
                           fontFamily: 'NotoSans',
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
-                          color: _MalinaliChrome.onBlue,
+                          color: MalinaliChrome.onBlue,
                         ),
                       ),
                     ],
                   ),
                 ),
               IconButton(
+                icon: const Icon(Icons.audio_file_outlined),
+                tooltip: 'Audio → texte (.opus)',
+                color: MalinaliChrome.onBlue,
+                onPressed: _loadingModel ? null : _openAudioTranscription,
+              ),
+              IconButton(
+                icon: const Icon(Icons.description_outlined),
+                tooltip: 'Traduire un document',
+                color: MalinaliChrome.onBlue,
+                onPressed: _loadingModel ? null : _openDocumentTranslation,
+              ),
+              IconButton(
                 icon: const Icon(Icons.settings_outlined),
                 tooltip: 'Paramètres',
-                color: _MalinaliChrome.onBlue,
+                color: MalinaliChrome.onBlue,
                 onPressed: _showSettings,
               ),
             ],
           ),
         ),
-        Container(height: 2, color: _MalinaliChrome.redAccent),
+        Container(height: 3, color: MalinaliChrome.redAccent),
         if (_loadingModel)
           const LinearProgressIndicator(
             minHeight: 2,
             backgroundColor: Colors.transparent,
-            color: _MalinaliChrome.yellowBorder,
+            color: MalinaliChrome.yellowBorder,
           ),
       ],
     );
@@ -747,13 +781,13 @@ class _TranslatePageState extends State<TranslatePage> {
                 fontFamily: 'NotoSans',
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
-                color: _MalinaliChrome.targetText,
+                color: MalinaliChrome.targetText,
               ),
             ),
             if (_availableModels.isNotEmpty)
               const Icon(
                 Icons.arrow_drop_down,
-                color: _MalinaliChrome.yellowBorder,
+                color: MalinaliChrome.yellowBorder,
               ),
           ],
         ),
@@ -769,7 +803,7 @@ class _TranslatePageState extends State<TranslatePage> {
       return Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: Colors.blue.shade50,
+          color: MalinaliChrome.blueAction.withValues(alpha: 0.25),
           borderRadius: BorderRadius.circular(20),
         ),
         child: const SizedBox(
@@ -790,14 +824,16 @@ class _TranslatePageState extends State<TranslatePage> {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: _listening
-                  ? Colors.red.shade100.withValues(alpha: 0.9)
-                  : Colors.blue.shade50,
+                  ? MalinaliChrome.redAccent.withValues(alpha: 0.25)
+                  : MalinaliChrome.blueAction.withValues(alpha: 0.25),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Icon(
               _listening ? Icons.mic : Icons.mic_none,
               size: 20,
-              color: _listening ? Colors.red.shade700 : const Color(0xFF2563EB),
+              color: _listening
+                  ? MalinaliChrome.redAccent
+                  : MalinaliChrome.yellowBorder,
             ),
           ),
         ),
@@ -815,17 +851,19 @@ class _TranslatePageState extends State<TranslatePage> {
           child: Container(
             padding: const EdgeInsets.all(7),
             decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              border: Border.all(color: Colors.blue.shade200),
+              color: MalinaliChrome.bluePanel,
+              border: Border.all(
+                color: MalinaliChrome.whiteBorder.withValues(alpha: 0.35),
+              ),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                Icon(
+                const Icon(
                   Icons.mic_none,
                   size: 20,
-                  color: Colors.grey.shade700,
+                  color: MalinaliChrome.mutedOnBlue,
                 ),
                 Positioned(
                   right: -2,
@@ -833,7 +871,7 @@ class _TranslatePageState extends State<TranslatePage> {
                   child: Container(
                     padding: const EdgeInsets.all(1),
                     decoration: const BoxDecoration(
-                      color: Color(0xFF2563EB),
+                      color: MalinaliChrome.blueAction,
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -858,7 +896,7 @@ class _TranslatePageState extends State<TranslatePage> {
         _sourceLang.name.isEmpty ? _sourceLang.nameEn : _sourceLang.name;
 
     return Scaffold(
-      backgroundColor: _MalinaliChrome.blueBg,
+      backgroundColor: MalinaliChrome.blueBg,
       body: SafeArea(
         child: Column(
           children: [
@@ -869,10 +907,10 @@ class _TranslatePageState extends State<TranslatePage> {
                 width: double.infinity,
                 margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: _MalinaliChrome.bluePanel,
+                  color: MalinaliChrome.bluePanel,
                   border: Border.all(
-                    color: _MalinaliChrome.yellowBorder,
-                    width: 2,
+                    color: MalinaliChrome.whiteBorder,
+                    width: 1,
                   ),
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
@@ -910,12 +948,12 @@ class _TranslatePageState extends State<TranslatePage> {
                                       fontFamily: 'NotoSans',
                                       fontWeight: FontWeight.w700,
                                       fontSize: 15,
-                                      color: _MalinaliChrome.sourceText,
+                                      color: MalinaliChrome.sourceText,
                                     ),
                                   ),
                                   const Icon(
                                     Icons.arrow_drop_down,
-                                    color: _MalinaliChrome.sourceText,
+                                    color: MalinaliChrome.sourceText,
                                     size: 22,
                                   ),
                                 ],
@@ -945,7 +983,7 @@ class _TranslatePageState extends State<TranslatePage> {
                                 child: const Icon(
                                   Icons.close,
                                   size: 16,
-                                  color: _MalinaliChrome.sourceText,
+                                  color: MalinaliChrome.sourceText,
                                 ),
                               ),
                             ),
@@ -961,101 +999,108 @@ class _TranslatePageState extends State<TranslatePage> {
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        child: TextField(
-                          controller: _inputController,
-                          focusNode: _inputFocusNode,
-                          autofocus: true,
-                          cursorColor: _MalinaliChrome.sourceText,
-                          maxLines: null,
-                          expands: true,
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _translate(),
-                          style: const TextStyle(
-                            fontSize: 16,
-                            height: 1.4,
-                            fontFamily: 'NotoSans',
-                            color: _MalinaliChrome.sourceText,
+                        child: ScrollbarTheme(
+                          data: ScrollbarThemeData(
+                            thumbColor: WidgetStateProperty.all(
+                              MalinaliChrome.sourceText.withValues(alpha: 0.5),
+                            ),
+                            trackColor: WidgetStateProperty.all(
+                              Colors.white.withValues(alpha: 0.08),
+                            ),
+                            thickness: WidgetStateProperty.all(4),
+                            radius: const Radius.circular(4),
                           ),
-                          decoration: InputDecoration(
-                            border: InputBorder.none,
-                            hintText: 'Tapez votre texte ici...',
-                            hintStyle: TextStyle(
-                              fontFamily: 'NotoSans',
-                              color: _MalinaliChrome.sourceText.withValues(alpha: 0.45),
-                              fontSize: 16,
+                          child: Scrollbar(
+                            controller: _inputScrollController,
+                            thumbVisibility: true,
+                            trackVisibility: true,
+                            child: TextField(
+                              controller: _inputController,
+                              focusNode: _inputFocusNode,
+                              scrollController: _inputScrollController,
+                              autofocus: true,
+                              cursorColor: MalinaliChrome.sourceText,
+                              maxLines: null,
+                              expands: true,
+                              textInputAction: TextInputAction.done,
+                              onSubmitted: (_) => _translate(),
+                              style: const TextStyle(
+                                fontSize: 16,
+                                height: 1.4,
+                                fontFamily: 'NotoSans',
+                                color: MalinaliChrome.sourceText,
+                              ),
+                              decoration: InputDecoration(
+                                border: InputBorder.none,
+                                hintText: 'Tapez votre texte ici...',
+                                hintStyle: TextStyle(
+                                  fontFamily: 'NotoSans',
+                                  color: MalinaliChrome.sourceText.withValues(alpha: 0.45),
+                                  fontSize: 16,
+                                ),
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                    if (hasInput)
-                      Align(
-                        alignment: Alignment.bottomRight,
-                        child: Padding(
-                          padding: const EdgeInsets.all(10.0),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(20),
-                              border: const Border(
-                                bottom: BorderSide(
-                                  color: _MalinaliChrome.redAccent,
-                                  width: 3,
-                                ),
-                              ),
-                            ),
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _MalinaliChrome.blueAction,
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 10,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                              ),
-                              onPressed: _busy ? null : _translate,
-                              icon: _busy
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Icon(
-                                      Icons.arrow_forward_rounded,
-                                      size: 18,
-                                    ),
-                              label: const Text(
-                                'Traduire',
-                                style: TextStyle(
-                                  fontFamily: 'NotoSans',
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
                   ],
                 ),
               ),
             ),
+            if (hasInput)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: MalinaliChrome.blueAction,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    onPressed: _busy ? null : _translate,
+                    icon: _busy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 18,
+                          ),
+                    label: const Text(
+                      'Traduire',
+                      style: TextStyle(
+                        fontFamily: 'NotoSans',
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             Expanded(
               flex: 5,
               child: Container(
                 width: double.infinity,
                 margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: _MalinaliChrome.bluePanel,
+                  color: MalinaliChrome.bluePanel,
                   border: Border.all(
-                    color: _MalinaliChrome.yellowBorder,
-                    width: 2,
+                    color: MalinaliChrome.yellowBorder,
+                    width: 1,
                   ),
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
@@ -1086,13 +1131,13 @@ class _TranslatePageState extends State<TranslatePage> {
                                   icon: const Icon(Icons.copy_rounded, size: 18),
                                   onPressed: _copyOutput,
                                   tooltip: 'Copier',
-                                  color: _MalinaliChrome.targetText,
+                                  color: MalinaliChrome.targetText,
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.share_rounded, size: 18),
                                   onPressed: _shareOutput,
                                   tooltip: 'Partager',
-                                  color: _MalinaliChrome.targetText,
+                                  color: MalinaliChrome.targetText,
                                 ),
                               ],
                             ),
@@ -1112,7 +1157,7 @@ class _TranslatePageState extends State<TranslatePage> {
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
                                   color: Colors.red.shade900.withValues(alpha: 0.35),
-                                  border: Border.all(color: _MalinaliChrome.redAccent),
+                                  border: Border.all(color: MalinaliChrome.redAccent),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Row(
@@ -1120,7 +1165,7 @@ class _TranslatePageState extends State<TranslatePage> {
                                   children: [
                                     const Icon(
                                       Icons.error_outline,
-                                      color: _MalinaliChrome.targetText,
+                                      color: MalinaliChrome.targetText,
                                       size: 20,
                                     ),
                                     const SizedBox(width: 8),
@@ -1130,7 +1175,7 @@ class _TranslatePageState extends State<TranslatePage> {
                                         style: const TextStyle(
                                           fontFamily: 'NotoSans',
                                           fontSize: 14,
-                                          color: _MalinaliChrome.sourceText,
+                                          color: MalinaliChrome.sourceText,
                                         ),
                                       ),
                                     ),
@@ -1146,9 +1191,9 @@ class _TranslatePageState extends State<TranslatePage> {
                                   height: 1.4,
                                   fontFamily: 'NotoSans',
                                   color: _output.isEmpty
-                                      ? _MalinaliChrome.targetText
+                                      ? MalinaliChrome.targetText
                                           .withValues(alpha: 0.45)
-                                      : _MalinaliChrome.targetText,
+                                      : MalinaliChrome.targetText,
                                 ),
                               ),
                       ),

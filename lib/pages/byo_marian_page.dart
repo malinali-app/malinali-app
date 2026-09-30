@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:languages_dart/languages_dart.dart';
 import 'package:malinali/services/translation_model_service.dart';
+import 'package:malinali/theme/malinali_chrome.dart';
 import 'package:malinali/widgets/language_picker_sheet.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -115,6 +116,7 @@ class _ByoMarianPageState extends State<ByoMarianPage> {
           TextField(
             controller: _repoController,
             enabled: !_busy,
+            style: const TextStyle(color: MalinaliChrome.onBlue),
             decoration: const InputDecoration(
               labelText: 'Identifiant Hugging Face',
               hintText: 'ex. Xenova/opus-mt-fr-en ou org/mon-finetune',
@@ -127,6 +129,7 @@ class _ByoMarianPageState extends State<ByoMarianPage> {
             controller: _tokenController,
             enabled: !_busy,
             obscureText: true,
+            style: const TextStyle(color: MalinaliChrome.onBlue),
             decoration: const InputDecoration(
               labelText: 'Jeton HF (optionnel, dépôts privés)',
               hintText: 'hf_… lecture seule recommandée',
@@ -177,30 +180,33 @@ class _ByoMarianPageState extends State<ByoMarianPage> {
             const SizedBox(height: 12),
             Text(
               _error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              style: const TextStyle(color: MalinaliChrome.redAccent),
             ),
           ],
           if (_success != null) ...[
             const SizedBox(height: 12),
-            Text(_success!, style: TextStyle(color: Colors.green.shade800)),
+            Text(
+              _success!,
+              style: const TextStyle(color: MalinaliChrome.success),
+            ),
           ],
           const SizedBox(height: 24),
           Text(
             'Modèles ajoutés',
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: MalinaliChrome.onBlue,
+                ),
           ),
           const SizedBox(height: 8),
           if (_custom.isEmpty)
             const Text(
               'Aucun modèle personnalisé pour l’instant.',
-              style: TextStyle(color: Colors.black54),
+              style: TextStyle(color: MalinaliChrome.mutedOnBlue),
             )
           else
             ..._custom.map(
               (m) => Card(
-                color: const Color(
-                  0xFFF0FDF4,
-                ), // Très léger vert (green.shade50)
+                color: MalinaliChrome.customPanel,
                 child: ListTile(
                   title: Text(m.displayName),
                   subtitle: Text(m.modelId),
@@ -226,9 +232,13 @@ class _ExplanationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = Theme.of(context).textTheme.bodyMedium;
+    const bodyStyle = TextStyle(
+      fontFamily: 'NotoSans',
+      color: MalinaliChrome.onBlue,
+      fontSize: 14,
+      height: 1.4,
+    );
     return Card(
-      color: const Color(0xFFEFF6FF),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -237,33 +247,37 @@ class _ExplanationCard extends StatelessWidget {
             Text(
               'Qu’est-ce qu’un modèle MarianMT « Candle » ?',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF1E3A8A),
-              ),
+                    fontWeight: FontWeight.w700,
+                    color: MalinaliChrome.yellowBorder,
+                  ),
             ),
             const SizedBox(height: 8),
-            Text(
+            const Text(
               'Malinali charge des poids Marian (.safetensors) '
               'via le moteur Rust Candle (marian_flutter)'
               'Le dépôt Hugging Face doit exposer des fichiers prêts à l\'usage : ',
-              style: style,
+              style: bodyStyle,
             ),
             const SizedBox(height: 8),
-            const Text('• config.json — architecture Marian'),
-            const Text('• model.safetensors — poids (~75–285 Mo)'),
+            const Text('• config.json — architecture Marian', style: bodyStyle),
+            const Text(
+              '• model.safetensors — poids (~75–285 Mo)',
+              style: bodyStyle,
+            ),
             const Text(
               '• tokenizer.json — OU la paire tokenizer-enc.json + tokenizer-dec.json ',
+              style: bodyStyle,
             ),
             const SizedBox(height: 8),
-            Text(
+            const Text(
               'Les dépôts Helsinki-NLP et Xenova/opus-mt-* fonctionnent tels quels.',
-              style: style,
+              style: bodyStyle,
             ),
             const SizedBox(height: 8),
-            Text(
+            const Text(
               'Les langues sont déduites si le nom contient opus-mt-xx-yy '
               '(ex. opus-mt-fr-en). Sinon, choisissez source et cible ci-dessous. ',
-              style: style,
+              style: bodyStyle,
             ),
             const SizedBox(height: 8),
             TextButton.icon(

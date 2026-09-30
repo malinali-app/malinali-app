@@ -87,6 +87,20 @@ if(PLUGIN_BUNDLED_LIBRARIES)
     COMPONENT Runtime)
 endif()
 
+# Vosk and FFmpegKit both ship MinGW runtimes under the same filenames
+# (libstdc++-6.dll, libgcc_s_seh-1.dll, libwinpthread-1.dll). Whichever
+# plugin copies last wins. Vosk's larger runtimes break FFmpegKit's
+# LoadLibrary("libffmpegkit.dll") → "libffmpegkit.dll not loaded".
+# Re-copy FFmpegKit's patched bin/*.dll last so Opus decode works on Windows.
+set(_FFMPEGKIT_BIN
+  "${CMAKE_BINARY_DIR}/plugins/ffmpeg_kit_flutter_new_audio/ffmpeg-kit/bin")
+if(EXISTS "${_FFMPEGKIT_BIN}/libffmpegkit.dll")
+  file(GLOB _FFMPEGKIT_BUNDLE_DLLS "${_FFMPEGKIT_BIN}/*.dll")
+  install(FILES ${_FFMPEGKIT_BUNDLE_DLLS}
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
+
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/windows/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"

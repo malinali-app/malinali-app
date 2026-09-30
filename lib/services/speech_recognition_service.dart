@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:malinali/services/vosk_model_service.dart';
+import 'package:malinali/services/audio_transcription_service.dart';
 import 'package:path/path.dart' as p;
 import 'package:record/record.dart';
 import 'package:vosk_flutter/vosk_flutter.dart';
@@ -188,6 +190,37 @@ class SpeechRecognitionService {
     } catch (_) {}
   }
 
+  /// Reset the recognizer so a new file (or utterance) starts clean.
+  Future<void> resetRecognizer() async {
+    if (!_isInitialized || _recognizer == null) {
+      await initialize();
+    }
+    await _recognizer!.reset();
+  }
+
+  /// Feed PCM 16-bit mono bytes (for file / batch STT).
+  Future<bool> acceptWaveformBytes(Uint8List bytes) async {
+    if (!_isInitialized || _recognizer == null) {
+      throw StateError('SpeechRecognitionService not initialized');
+    }
+    return _recognizer!.acceptWaveformBytes(bytes);
+  }
+
+  Future<String> getResultJson() async {
+    if (_recognizer == null) return '{}';
+    return _recognizer!.getResult();
+  }
+
+  Future<String> getPartialResultJson() async {
+    if (_recognizer == null) return '{}';
+    return _recognizer!.getPartialResult();
+  }
+
+  Future<String> getFinalResultJson() async {
+    if (_recognizer == null) return '{}';
+    return _recognizer!.getFinalResult();
+  }
+
   Future<void> _disposeRecognizerAndModel() async {
     _recognizer = null;
     _model = null;
@@ -229,4 +262,35 @@ class SpeechRecognitionService {
     _disposeRecognizerAndModel();
     _vosk = null;
   }
+}
+
+/// [WaveformTranscriber] backed by the same Vosk stack as live mic.
+class VoskWaveformTranscriber implements WaveformTranscriber {
+  VoskWaveformTranscriber({
+    required SpeechRecognitionService speech,
+    VoskModel? model,
+  })  : _speech = speech,
+        _model = model;
+
+  final SpeechRecognitionService _speech;
+  final VoskModel? _model;
+
+  @override
+  Future<void> ensureReady() => _speech.initialize(model: _model);
+
+  @override
+  Future<void> reset() => _speech.resetRecognizer();
+
+  @override
+  Future<bool> acceptWaveformBytes(Uint8List bytes) =>
+      _speech.acceptWaveformBytes(bytes);
+
+  @override
+  Future<String> getResultJson() => _speech.getResultJson();
+
+  @override
+  Future<String> getPartialResultJson() => _speech.getPartialResultJson();
+
+  @override
+  Future<String> getFinalResultJson() => _speech.getFinalResultJson();
 }

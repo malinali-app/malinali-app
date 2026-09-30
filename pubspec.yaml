@@ -28,14 +28,21 @@ dependencies:
       url: https://github.com/weebi-com/flutter-permission-handler/
       ref: e4029c615a6e1fcb1ddfd7c66cf6f09324de3ab3
       path: permission_handler
-  share_plus: ^10.1.4
+  share_plus: ^13.3.0
   url_launcher: ^6.3.1
   record: ^7.1.1
   path: ^1.9.0
   archive: ^3.6.1
+  filebridge:
+    path: packages/filebridge
+  # Leanest maintained Flutter package that includes Opus (WhatsApp voice notes).
+  # There is no pub package named "ffmpeg-kit-free"; `_audio` is the Opus-capable tier.
+  ffmpeg_kit_flutter_new_audio: ^2.5.2
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
   flutter_lints: any
   flutter_launcher_icons: ^0.13.1

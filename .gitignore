@@ -78,3 +78,5 @@ android/.kotlin/
 er/build
 /ecrit
 /scripts/prepare_app_assets.sh
+hobbit.txt
+test/fixtures/audio/PTT-20260928-WA0003.opus

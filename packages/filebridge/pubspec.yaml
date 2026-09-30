@@ -1,0 +1,28 @@
+name: filebridge
+description: File import and export helpers (ported from weebi for Malinali).
+version: 0.0.20
+publish_to: none
+
+environment:
+  sdk: '>=3.7.2 <4.0.0'
+  flutter: '>=3.27.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  file_picker: ^12.1.1
+  file_selector: ^1.0.3
+  path_provider: ^2.1.1
+  document_file_save_plus:
+    git:
+      url: https://github.com/advoques/document_file_save_plus
+      ref: c40a4d10f27ae0d218090f6dbf704130a7b49677
+  media_store_plus: ^0.1.3
+  path: ^1.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: any
+
+flutter:

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:malinali/pages/translate_page.dart';
 import 'package:malinali/services/translation_model_service.dart';
+import 'package:malinali/theme/malinali_chrome.dart';
 import 'package:marian_flutter/marian_flutter.dart';
 
 class MalinaliApp extends StatelessWidget {
@@ -10,11 +11,7 @@ class MalinaliApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Malinali',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
-        fontFamily: 'NotoSans',
-      ),
+      theme: MalinaliChrome.theme(),
       debugShowCheckedModeBanner: false,
       home: const MarianBootScreen(),
     );
