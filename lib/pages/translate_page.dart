@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:languages_dart/languages_dart.dart';
@@ -5,6 +7,7 @@ import 'package:malinali/pages/audio_transcription_page.dart';
 import 'package:malinali/pages/document_translation_page.dart';
 import 'package:malinali/pages/settings_page.dart';
 import 'package:malinali/pages/translation_settings_page.dart';
+import 'package:malinali/services/malinali_audio_open_intent.dart';
 import 'package:malinali/services/speech_recognition_service.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/vosk_model_service.dart';
@@ -63,6 +66,7 @@ class _TranslatePageState extends State<TranslatePage> {
   String _loadingModelLabel = 'Chargement...';
   bool _listening = false;
   bool _speechReady = false;
+  StreamSubscription<String>? _audioShareSub;
 
   @override
   void initState() {
@@ -79,6 +83,21 @@ class _TranslatePageState extends State<TranslatePage> {
     _inputController.addListener(() => setState(() {}));
     _initVoskAndSpeech();
     _loadAvailableModels();
+    _listenForSharedAudio();
+  }
+
+  void _listenForSharedAudio() {
+    final pending = MalinaliAudioOpenIntent.instance.takePendingPath();
+    if (pending != null && pending.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openAudioTranscription(initialAudioPath: pending);
+      });
+    }
+    _audioShareSub = MalinaliAudioOpenIntent.instance.pathStream.listen((path) {
+      if (!mounted || path.isEmpty) return;
+      MalinaliAudioOpenIntent.instance.takePendingPath();
+      _openAudioTranscription(initialAudioPath: path);
+    });
   }
 
   Future<void> _initVoskAndSpeech() async {
@@ -272,6 +291,7 @@ class _TranslatePageState extends State<TranslatePage> {
 
   @override
   void dispose() {
+    _audioShareSub?.cancel();
     _speech?.dispose();
     _inputController.dispose();
     _inputFocusNode.dispose();
@@ -420,7 +440,7 @@ class _TranslatePageState extends State<TranslatePage> {
     );
   }
 
-  void _openAudioTranscription() {
+  void _openAudioTranscription({String? initialAudioPath}) {
     if (_loadingModel) return;
     Navigator.push(
       context,
@@ -429,6 +449,7 @@ class _TranslatePageState extends State<TranslatePage> {
           voskService: _voskService,
           speechService: _speech,
           voskModel: _matchingVoskModel ?? VoskModelService.assetFrenchModel,
+          initialAudioPath: initialAudioPath,
         ),
       ),
     );
@@ -1014,7 +1035,16 @@ class _TranslatePageState extends State<TranslatePage> {
                             controller: _inputScrollController,
                             thumbVisibility: true,
                             trackVisibility: true,
-                            child: TextField(
+                            child: Theme(
+                              data: Theme.of(context).copyWith(
+                                textSelectionTheme: TextSelectionThemeData(
+                                  cursorColor: MalinaliChrome.sourceText,
+                                  selectionColor:
+                                      MalinaliChrome.sourceText.withValues(alpha: 0.28),
+                                  selectionHandleColor: MalinaliChrome.sourceText,
+                                ),
+                              ),
+                              child: TextField(
                               controller: _inputController,
                               focusNode: _inputFocusNode,
                               scrollController: _inputScrollController,
@@ -1031,7 +1061,13 @@ class _TranslatePageState extends State<TranslatePage> {
                                 color: MalinaliChrome.sourceText,
                               ),
                               decoration: InputDecoration(
+                                filled: false,
                                 border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                disabledBorder: InputBorder.none,
+                                errorBorder: InputBorder.none,
+                                focusedErrorBorder: InputBorder.none,
                                 hintText: 'Tapez votre texte ici...',
                                 hintStyle: TextStyle(
                                   fontFamily: 'NotoSans',
@@ -1039,6 +1075,7 @@ class _TranslatePageState extends State<TranslatePage> {
                                   fontSize: 16,
                                 ),
                               ),
+                            ),
                             ),
                           ),
                         ),

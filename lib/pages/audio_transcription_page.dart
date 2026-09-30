@@ -74,6 +74,9 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
     if (initial != null && initial.isNotEmpty) {
       _sourcePath = initial;
       _sourceName = p.basename(initial);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _start();
+      });
     }
   }
 

@@ -10,12 +10,16 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
+            <!-- File VIEW/SEND intents are audio opens, not Flutter routes. -->
+            <meta-data
+              android:name="flutter_deeplinking_enabled"
+              android:value="false" />
             <!-- Specifies an Android theme to apply to this Activity as soon as
                  the Android process has started. This theme is visible to the user
                  while the Flutter UI initializes. After that, this theme continues
@@ -27,6 +31,53 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+
+            <!-- Share target: WhatsApp voice notes / audio (ACTION_SEND). -->
+            <intent-filter android:label="Transcrire avec Malinali">
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="audio/*"/>
+                <data android:mimeType="application/ogg"/>
+                <data android:mimeType="application/octet-stream"/>
+            </intent-filter>
+
+            <!-- WhatsApp sometimes tags shares with a generic MIME; accept and filter in MainActivity. -->
+            <intent-filter android:label="Transcrire avec Malinali">
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="*/*"/>
+            </intent-filter>
+
+            <!-- Open audio from file managers / Gallery "Open with". -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="content"/>
+                <data android:scheme="file"/>
+                <data android:mimeType="audio/*"/>
+                <data android:mimeType="application/ogg"/>
+                <data android:mimeType="application/octet-stream"/>
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="content"/>
+                <data android:scheme="file"/>
+                <data android:host="*"/>
+                <data android:pathPattern=".*\\.opus"/>
+                <data android:pathPattern=".*\\..*\\.opus"/>
+                <data android:pathPattern=".*\\.ogg"/>
+                <data android:pathPattern=".*\\..*\\.ogg"/>
+                <data android:pathPattern=".*\\.m4a"/>
+                <data android:pathPattern=".*\\..*\\.m4a"/>
+                <data android:pathPattern=".*\\.wav"/>
+                <data android:pathPattern=".*\\..*\\.wav"/>
+                <data android:pathPattern=".*\\.mp3"/>
+                <data android:pathPattern=".*\\..*\\.mp3"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
