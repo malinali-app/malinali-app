@@ -656,7 +656,7 @@ class _TranslatePageState extends State<TranslatePage> {
               if (!_loadingModel) ...[
                 IconButton(
                   icon: const Icon(Icons.audio_file_outlined),
-                  tooltip: 'Audio → texte (.opus)',
+                  tooltip: 'Transcription audio',
                   color: MalinaliChrome.onBlue,
                   visualDensity: VisualDensity.compact,
                   constraints: headerIconConstraints,

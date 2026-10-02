@@ -80,3 +80,6 @@ er/build
 /scripts/prepare_app_assets.sh
 hobbit.txt
 test/fixtures/audio/PTT-20260928-WA0003.opus
+/hugging_face_malinali_secret.txt
+/.cache/
+tool/publish_african_candle.py

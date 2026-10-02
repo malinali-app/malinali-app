@@ -145,6 +145,25 @@ void main() {
       expect(boot.requiresAuth, isFalse);
     });
 
+    test('curated African Helsinki bilaterals include Hausa/Yoruba with BLEU hints', () {
+      final service = TranslationModelService();
+      final african = service.debugCuratedAfricanModels();
+      expect(african.length, greaterThan(40));
+      expect(
+        african.any((m) => m.modelId == 'malinali-app/opus-mt-en-ha'),
+        isTrue,
+      );
+      expect(
+        african.any((m) => m.modelId == 'malinali-app/opus-mt-yo-en'),
+        isTrue,
+      );
+      final ha = african.firstWhere((m) => m.modelId == 'malinali-app/opus-mt-en-ha');
+      expect(ha.qualityHint, 'BLEU 34.1 / 100');
+      // Multilingual packs must stay out of the curated bilateral list.
+      expect(african.any((m) => m.modelId.contains('-mul')), isFalse);
+      expect(african.any((m) => m.modelId.contains('-alv')), isFalse);
+    });
+
     test('fetchAllAvailableModels includes private HF Fula and Xenova', () async {
       final service = TranslationModelService();
       final models = await service.fetchAllAvailableModels();
@@ -154,6 +173,7 @@ void main() {
         isTrue,
       );
       expect(models.any((m) => m.modelId.startsWith('Xenova/')), isTrue);
+      expect(models.any((m) => m.modelId == 'malinali-app/opus-mt-en-ha'), isTrue);
       expect(models.any((m) => m.modelId == 'assets/fr-pul'), isFalse);
     });
 

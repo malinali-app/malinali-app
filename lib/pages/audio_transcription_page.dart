@@ -270,7 +270,7 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Audio → texte'),
+        title: const Text('Transcription audio'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),

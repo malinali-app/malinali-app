@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:malinali/pages/byo_marian_page.dart';
+import 'package:malinali/services/african_helsinki_models.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/vosk_model_service.dart';
 import 'package:malinali/theme/malinali_chrome.dart';
@@ -116,29 +117,34 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
     return _voskService.findModelForLanguage(model.sourceLang, _voskModels);
   }
 
+  Future<void> _openByo() async {
+    final model = await Navigator.push<TranslationModel>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ByoMarianPage(modelService: widget.modelService),
+      ),
+    );
+    if (!mounted) return;
+    if (model != null) {
+      Navigator.pop(context, model);
+      return;
+    }
+    await _loadModels();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Modèles de traduction'),
+        title: const Text('Modèles'),
         actions: [
-          IconButton(
-            tooltip: 'Bring Your Own (Hugging Face)',
-            icon: const Icon(Icons.add_box_outlined),
-            onPressed: () async {
-              final model = await Navigator.push<TranslationModel>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ByoMarianPage(modelService: widget.modelService),
-                ),
-              );
-              if (!mounted) return;
-              if (model != null) {
-                Navigator.pop(context, model);
-                return;
-              }
-              await _loadModels();
-            },
+          TextButton.icon(
+            onPressed: _openByo,
+            icon: const Icon(Icons.auto_awesome, size: 20),
+            label: const Text('Mon modèle'),
+            style: TextButton.styleFrom(
+              foregroundColor: MalinaliChrome.yellowBorder,
+            ),
           ),
         ],
       ),
@@ -290,8 +296,25 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
                                   ),
                               ],
                             ),
-                            subtitle: Text(
-                              '${model.displayEnglishName}\n${model.modelId}${hasVosk ? ' • Voix: ${voskModel.langText}' : ''}',
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(model.displayEnglishName),
+                                Text(model.modelId),
+                                if (model.qualityHint != null &&
+                                    model.qualityHint!.isNotEmpty)
+                                  InkWell(
+                                    onTap: _launchBleuPaper,
+                                    child: Text(
+                                      model.qualityHint!,
+                                      style: const TextStyle(
+                                        color: MalinaliChrome.blueChip,
+                                        decoration: TextDecoration.underline,
+                                        decorationColor: MalinaliChrome.blueChip,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                             isThreeLine: true,
                             trailing: Row(
@@ -396,6 +419,13 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
 
   Future<void> _launchHF(String modelId) async {
     final url = Uri.parse('https://huggingface.co/$modelId');
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url);
+    }
+  }
+
+  Future<void> _launchBleuPaper() async {
+    final url = Uri.parse(kBleuPaperUrl);
     if (await canLaunchUrl(url)) {
       await launchUrl(url);
     }
