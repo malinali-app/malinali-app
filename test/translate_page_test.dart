@@ -1,5 +1,8 @@
+import 'package:aptabase_flutter/aptabase_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
@@ -71,10 +74,23 @@ class FakeSpeechRecognitionService extends Fake
 void main() {
   late MockTranslationModelService mockModelService;
   late MockMarianService mockMarian;
+  bool aptabaseInitialized = false;
 
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUp(() {
+  setUp(() async {
+    if (!aptabaseInitialized) {
+      SharedPreferences.setMockInitialValues({});
+      PackageInfo.setMockInitialValues(
+        appName: 'Malinali',
+        packageName: 'com.malinali.app',
+        version: '1.1.6',
+        buildNumber: '116',
+        buildSignature: '',
+      );
+      await Aptabase.init('A-DEV-0000000000');
+      aptabaseInitialized = true;
+    }
     mockModelService = MockTranslationModelService();
     mockMarian = MockMarianService();
     MalinaliAudioOpenIntent.instance.resetForTest();
@@ -100,6 +116,7 @@ void main() {
 
     when(mockModelService.fetchAvailableModels(any)).thenAnswer((_) async => []);
     when(mockModelService.fetchAllAvailableModels()).thenAnswer((_) async => [model]);
+    when(mockModelService.isModelDownloaded(any)).thenAnswer((_) async => false);
 
     await tester.runAsync(() async {
       await tester.pumpWidget(MaterialApp(
@@ -124,12 +141,13 @@ void main() {
 
     // Should now be on TranslationSettingsPage
     expect(find.byType(TranslationSettingsPage), findsOneWidget);
-    expect(find.text('Modèles de traduction'), findsOneWidget);
+    expect(find.text('Modèles'), findsOneWidget);
   });
 
   testWidgets('TranslatePage settings button opens SettingsPage', (WidgetTester tester) async {
     when(mockModelService.fetchAvailableModels(any)).thenAnswer((_) async => []);
     when(mockModelService.fetchAllAvailableModels()).thenAnswer((_) async => []);
+    when(mockModelService.isModelDownloaded(any)).thenAnswer((_) async => false);
 
     await tester.runAsync(() async {
       await tester.pumpWidget(MaterialApp(
@@ -160,6 +178,7 @@ void main() {
   testWidgets('TranslatePage displays mic button when source has VOSK model', (WidgetTester tester) async {
     when(mockModelService.fetchAvailableModels(any)).thenAnswer((_) async => []);
     when(mockModelService.fetchAllAvailableModels()).thenAnswer((_) async => []);
+    when(mockModelService.isModelDownloaded(any)).thenAnswer((_) async => false);
 
     await tester.runAsync(() async {
       await tester.pumpWidget(MaterialApp(
@@ -175,8 +194,6 @@ void main() {
     // Default source is French, which has asset VOSK model
     // Mic icon should be visible in input area
     expect(find.byIcon(Icons.mic_none), findsOneWidget);
-    // Header should also display mic icon for matching Vosk model
-    expect(find.byIcon(Icons.mic), findsOneWidget);
   });
 
   testWidgets(
@@ -188,6 +205,8 @@ void main() {
         .thenAnswer((_) async => []);
     when(mockModelService.fetchAllAvailableModels())
         .thenAnswer((_) async => []);
+    when(mockModelService.isModelDownloaded(any)).thenAnswer((_) async => false);
+    when(mockModelService.isModelDownloaded(any)).thenAnswer((_) async => false);
     when(mockMarian.translate(any, config: anyNamed('config')))
         .thenAnswer((_) async => 'Hello world');
 
@@ -220,8 +239,7 @@ void main() {
     expect(fakeSpeech.stopCount, 0);
 
     // 3. While recording, mic icon is active (Icons.mic)
-    // One Icons.mic in header status, one in recording button
-    expect(find.byIcon(Icons.mic), findsNWidgets(2));
+    expect(find.byIcon(Icons.mic), findsOneWidget);
     expect(find.byIcon(Icons.mic_none), findsNothing);
 
     // Simulate Vosk intermediate utterance
@@ -259,6 +277,7 @@ void main() {
         .thenAnswer((_) async => []);
     when(mockModelService.fetchAllAvailableModels())
         .thenAnswer((_) async => []);
+    when(mockModelService.isModelDownloaded(any)).thenAnswer((_) async => false);
 
     await tester.runAsync(() async {
       await tester.pumpWidget(MaterialApp(

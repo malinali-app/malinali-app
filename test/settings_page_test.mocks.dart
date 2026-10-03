@@ -9,7 +9,9 @@ import 'dart:io' as _i3;
 
 import 'package:languages_dart/languages_dart.dart' as _i5;
 import 'package:malinali/services/translation_model_service.dart' as _i2;
+import 'package:malinali/services/vosk_model_service.dart' as _i6;
 import 'package:mockito/mockito.dart' as _i1;
+import 'package:mockito/src/dummies.dart' as _i7;
 
 // ignore_for_file: type=lint
 // ignore_for_file: avoid_redundant_argument_values
@@ -55,6 +57,14 @@ class MockTranslationModelService extends _i1.Mock
             ),
           )
           as _i4.Future<List<_i2.TranslationModel>>);
+
+  @override
+  List<_i2.TranslationModel> debugCuratedAfricanModels() =>
+      (super.noSuchMethod(
+            Invocation.method(#debugCuratedAfricanModels, []),
+            returnValue: <_i2.TranslationModel>[],
+          )
+          as List<_i2.TranslationModel>);
 
   @override
   List<_i2.TranslationModel> dedupeByLanguagePair(
@@ -197,4 +207,103 @@ class MockTranslationModelService extends _i1.Mock
             ),
           )
           as _i4.Future<_i3.Directory>);
+}
+
+/// A class which mocks [VoskModelService].
+///
+/// See the documentation for Mockito's code generation for more information.
+class MockVoskModelService extends _i1.Mock implements _i6.VoskModelService {
+  MockVoskModelService() {
+    _i1.throwOnMissingStub(this);
+  }
+
+  @override
+  _i4.Future<List<_i6.VoskModel>> fetchAllSmallModels() =>
+      (super.noSuchMethod(
+            Invocation.method(#fetchAllSmallModels, []),
+            returnValue: _i4.Future<List<_i6.VoskModel>>.value(
+              <_i6.VoskModel>[],
+            ),
+          )
+          as _i4.Future<List<_i6.VoskModel>>);
+
+  @override
+  _i4.Future<_i3.Directory> getStorageDirectory() =>
+      (super.noSuchMethod(
+            Invocation.method(#getStorageDirectory, []),
+            returnValue: _i4.Future<_i3.Directory>.value(
+              _FakeDirectory_1(
+                this,
+                Invocation.method(#getStorageDirectory, []),
+              ),
+            ),
+          )
+          as _i4.Future<_i3.Directory>);
+
+  @override
+  _i4.Future<bool> isModelDownloaded(_i6.VoskModel? model) =>
+      (super.noSuchMethod(
+            Invocation.method(#isModelDownloaded, [model]),
+            returnValue: _i4.Future<bool>.value(false),
+          )
+          as _i4.Future<bool>);
+
+  @override
+  _i4.Future<String> getModelPath(_i6.VoskModel? model) =>
+      (super.noSuchMethod(
+            Invocation.method(#getModelPath, [model]),
+            returnValue: _i4.Future<String>.value(
+              _i7.dummyValue<String>(
+                this,
+                Invocation.method(#getModelPath, [model]),
+              ),
+            ),
+          )
+          as _i4.Future<String>);
+
+  @override
+  _i4.Future<String> downloadModel(
+    _i6.VoskModel? model, {
+    void Function(int, int)? onProgress,
+  }) =>
+      (super.noSuchMethod(
+            Invocation.method(
+              #downloadModel,
+              [model],
+              {#onProgress: onProgress},
+            ),
+            returnValue: _i4.Future<String>.value(
+              _i7.dummyValue<String>(
+                this,
+                Invocation.method(
+                  #downloadModel,
+                  [model],
+                  {#onProgress: onProgress},
+                ),
+              ),
+            ),
+          )
+          as _i4.Future<String>);
+
+  @override
+  _i4.Future<void> deleteModel(_i6.VoskModel? model) =>
+      (super.noSuchMethod(
+            Invocation.method(#deleteModel, [model]),
+            returnValue: _i4.Future<void>.value(),
+            returnValueForMissingStub: _i4.Future<void>.value(),
+          )
+          as _i4.Future<void>);
+
+  @override
+  _i6.VoskModel? findModelForLanguage(
+    _i5.Language? language,
+    List<_i6.VoskModel>? availableModels,
+  ) =>
+      (super.noSuchMethod(
+            Invocation.method(#findModelForLanguage, [
+              language,
+              availableModels,
+            ]),
+          )
+          as _i6.VoskModel?);
 }

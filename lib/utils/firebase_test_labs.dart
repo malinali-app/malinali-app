@@ -4,7 +4,7 @@ import 'dart:io';
 // Flutter imports:
 import 'package:flutter/services.dart';
 
-const _channel = MethodChannel('com.malinali.malinaliapp/firebase_test_lab');
+const _channel = MethodChannel('app.malinali.l10n/firebase_test_lab');
 
 /// Whether the app is running in Firebase Test Lab (Play pre-launch reports).
 ///

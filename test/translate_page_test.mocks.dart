@@ -60,6 +60,14 @@ class MockTranslationModelService extends _i1.Mock
           as _i4.Future<List<_i2.TranslationModel>>);
 
   @override
+  List<_i2.TranslationModel> debugCuratedAfricanModels() =>
+      (super.noSuchMethod(
+            Invocation.method(#debugCuratedAfricanModels, []),
+            returnValue: <_i2.TranslationModel>[],
+          )
+          as List<_i2.TranslationModel>);
+
+  @override
   List<_i2.TranslationModel> dedupeByLanguagePair(
     List<_i2.TranslationModel>? models,
   ) =>

@@ -85,3 +85,6 @@ test/fixtures/audio/PTT-20260928-WA0003.opus
 tool/publish_african_candle.py
 /aptabase.txt
 /lib/secrets.dart
+/temp_model
+/model_upload_files
+/Malinali_do_not_delete

@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.provider.Settings
 import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -14,6 +15,7 @@ import java.io.FileOutputStream
 class MainActivity : FlutterActivity() {
     private val tag = "MalinaliMainActivity"
     private val channelName = "app.malinali.l10n/audio_open"
+    private val channelTestLab = "app.malinali.l10n/firebase_test_lab"
     private var audioChannel: MethodChannel? = null
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
@@ -45,11 +47,22 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        
         audioChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
         audioChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "getPendingAudioPath" -> result.success(getAndClearPending())
                 else -> result.notImplemented()
+            }
+        }
+
+          // 2. Firebase Test Lab Channel
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelTestLab).setMethodCallHandler { call, result ->
+            if (call.method == "isFirebaseTestLab") {
+                val testLabSetting = Settings.System.getString(contentResolver, "firebase.test.lab")
+                result.success("true" == testLabSetting)
+            } else {
+                result.notImplemented()
             }
         }
     }

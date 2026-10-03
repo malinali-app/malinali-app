@@ -1,8 +1,9 @@
 # Changelog
 
-## 1.1.5 - 3 octobre 2026
+## 1.1.5 & 1.1.6 - 3 octobre 2026
 
 - added aptabase
+- switched default French-English model to **tiny** version (25M params, ~75MB) for faster first launch and lower footprint.
 
 ## 1.1.4 - 2 octobre 2026
 
@@ -28,6 +29,7 @@
 ### English (summary)
 
 - Local MarianMT via Rust Candle; ~110+ bilateral pairs across ~40 languages, including African Helsinki OPUS packs hosted at malinali-app (BLEU shown as `/ 100`).
+- Switched default FR-EN model to **tiny** variant (25M params) to reduce app footprint.
 - Fine-tuned French–Fula model (private) + Xenova mirrors for common pairs.
 - Local Vosk speech recognition beyond French.
 - No user text sent to third-party servers — fully confidential for field research and NGO work.

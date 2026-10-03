@@ -138,9 +138,9 @@ void main() {
       expect(fula.downloadSizeHint, '~285 Mo');
     });
 
-    test('boot default is public Xenova FR→EN', () {
+    test('boot default is public tiny Helsinki FR→EN', () {
       final boot = TranslationModelService.defaultBootModel;
-      expect(boot.modelId, 'Xenova/opus-mt-fr-en');
+      expect(boot.modelId, 'Helsinki-NLP/opus-mt_tiny_fra-eng');
       expect(boot.isAsset, isFalse);
       expect(boot.requiresAuth, isFalse);
     });

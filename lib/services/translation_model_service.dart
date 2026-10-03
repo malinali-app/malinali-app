@@ -142,11 +142,12 @@ class TranslationModelService {
   final Dio _dio = Dio();
   static const String _xenovaAuthor = 'Xenova';
 
-  /// Boot default: small public Xenova FR→EN (single tokenizer.json).
+  /// Boot default: tiny public Helsinki FR→EN (25M params).
   static final TranslationModel defaultBootModel = TranslationModel(
     sourceLang: Languages.french,
     targetLang: Languages.english,
-    modelId: 'Xenova/opus-mt-fr-en',
+    modelId: 'Helsinki-NLP/opus-mt_tiny_fra-eng',
+    downloadSizeHint: '~75 Mo',
   );
 
   /// Pre-defined private models (MOAT) — downloaded on demand from HF.
@@ -645,16 +646,25 @@ class TranslationModelService {
       }
     }
 
-    // 2. Tokenizers — Xenova opus-mt: single tokenizer.json
-    final isOpusMt = model.modelId.toLowerCase().contains('opus-mt-');
+    // 2. Tokenizers — Helsinki / Xenova / Malinali-app fallbacks
+    final isOpusMt = model.modelId.toLowerCase().contains('opus-mt-') || 
+                     model.modelId.contains('_tiny_');
     if (isOpusMt && !model.requiresAuth) {
-      final namePart = model.modelId.split('/').last.toLowerCase();
-      final xenovaId = 'Xenova/$namePart';
-      for (final filename in ['tokenizer.json', 'tokenizer-enc.json', 'tokenizer-dec.json']) {
-        try {
-          await _downloadOneFile(xenovaId, modelDir, filename);
-          return modelDir;
-        } catch (_) {}
+      final namePart = model.modelId.split('/').last;
+      final fallbacks = [
+        'Xenova/$namePart',
+        'malinali-app/$namePart',
+      ];
+      
+      for (final repoId in fallbacks) {
+        for (final filename in ['tokenizer.json', 'tokenizer-enc.json', 'tokenizer-dec.json']) {
+          try {
+            await _downloadOneFile(repoId.toLowerCase(), modelDir, filename);
+            // If we found a tokenizer.json, we might still need -enc/-dec if it's a dual tokenizer repo,
+            // but usually Xenova/Malinali-app provide what's needed.
+            return modelDir;
+          } catch (_) {}
+        }
       }
       for (final filename in ['tokenizer.json', 'tokenizer-enc.json']) {
         try {

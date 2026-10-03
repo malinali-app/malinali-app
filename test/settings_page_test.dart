@@ -1,5 +1,8 @@
+import 'package:aptabase_flutter/aptabase_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
@@ -7,18 +10,34 @@ import 'package:malinali/pages/settings_page.dart';
 import 'package:malinali/pages/translation_settings_page.dart';
 import 'package:malinali/pages/transcription_settings_page.dart';
 import 'package:malinali/services/translation_model_service.dart';
+import 'package:malinali/services/vosk_model_service.dart';
 import 'package:languages_dart/languages_dart.dart';
 
 import 'settings_page_test.mocks.dart';
 
-@GenerateMocks([TranslationModelService])
+@GenerateMocks([TranslationModelService, VoskModelService])
 void main() {
   late MockTranslationModelService mockModelService;
+  late MockVoskModelService mockVoskService;
+  bool aptabaseInitialized = false;
 
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUp(() {
+  setUp(() async {
+    if (!aptabaseInitialized) {
+      SharedPreferences.setMockInitialValues({});
+      PackageInfo.setMockInitialValues(
+        appName: 'Malinali',
+        packageName: 'com.malinali.app',
+        version: '1.1.6',
+        buildNumber: '116',
+        buildSignature: '',
+      );
+      await Aptabase.init('A-DEV-0000000000');
+      aptabaseInitialized = true;
+    }
     mockModelService = MockTranslationModelService();
+    mockVoskService = MockVoskModelService();
     const MethodChannel('plugins.flutter.io/path_provider')
         .setMockMethodCallHandler((MethodCall methodCall) async {
       if (methodCall.method == 'getApplicationDocumentsDirectory') {
@@ -28,16 +47,21 @@ void main() {
     });
   });
 
-  testWidgets('SettingsPage shows two tiles: Traduction and Transcription', (WidgetTester tester) async {
+  testWidgets('SettingsPage shows three tiles: Traduction, BYO, and Transcription', (WidgetTester tester) async {
     await tester.pumpWidget(MaterialApp(
-      home: SettingsPage(modelService: mockModelService),
+      home: SettingsPage(
+        modelService: mockModelService,
+        voskService: mockVoskService,
+      ),
     ));
 
     expect(find.text('Paramètres'), findsOneWidget);
     expect(find.text('Traduction'), findsOneWidget);
+    expect(find.text('Utiliser mon propre modèle'), findsOneWidget);
     expect(find.text('Transcription'), findsOneWidget);
 
     expect(find.byIcon(Icons.translate), findsOneWidget);
+    expect(find.byIcon(Icons.auto_awesome), findsOneWidget);
     expect(find.byIcon(Icons.mic), findsOneWidget);
 
     // Tap Traduction tile -> opens TranslationSettingsPage
@@ -71,10 +95,17 @@ void main() {
     ];
 
     when(mockModelService.fetchAllAvailableModels()).thenAnswer((_) async => models);
+    when(mockModelService.isModelDownloaded(any)).thenAnswer((_) async => false);
+    when(mockVoskService.fetchAllSmallModels()).thenAnswer((_) async => []);
+    when(mockVoskService.isModelDownloaded(any)).thenAnswer((_) async => false);
+    when(mockVoskService.findModelForLanguage(any, any)).thenReturn(null);
 
     await tester.runAsync(() async {
       await tester.pumpWidget(MaterialApp(
-        home: TranslationSettingsPage(modelService: mockModelService),
+        home: TranslationSettingsPage(
+          modelService: mockModelService,
+          voskService: mockVoskService,
+        ),
       ));
 
       // Wait for models to load
