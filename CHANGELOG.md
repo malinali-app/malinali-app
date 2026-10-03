@@ -1,10 +1,14 @@
 # Changelog
 
+## 1.1.5 - 3 octobre 2026
+
+- added aptabase
+
 ## 1.1.4 - 2 octobre 2026
 
 ### Traduction neuronale locale (MarianMT)
 
-- Catalogue élargi : **~110+ paires bilatérales**, **~40 langues**, dont les bilatéraux africains Helsinki-NLP OPUS (haoussa, yoruba, igbo, swahili/congo, kinyarwanda, rundi, ganda, shona, lingala, nyanja, twi, ewe, kabyle, tigrinya, tiv, …).
+- Catalogue élargi : **~110+ modèles**, **~40 langues**, dont haoussa, yoruba, igbo, swahili/congo, kinyarwanda, rundi, ganda, shona, lingala, nyanja, twi, ewe, kabyle, tigrinya, tiv...
 - Packs Candle publics sous [`malinali-app`](https://huggingface.co/malinali-app) (`config` + `safetensors` + tokenizers) — scores BLEU OPUS affichés en `BLEU xx.x / 100` dans Paramètres → Traduction.
 - Modèle **français → peul (fula)** privé toujours disponible ; Xenova Opus-MT pour le reste des paires européennes / asiatiques courantes.
 

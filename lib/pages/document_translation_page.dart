@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:aptabase_flutter/aptabase_flutter.dart';
 import 'package:filebridge/filebridge.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -133,6 +134,11 @@ class _DocumentTranslationPageState extends State<DocumentTranslationPage> {
     });
 
     try {
+      Aptabase.instance.trackEvent('document_translation_started', {
+        'model_id': widget.model.modelId,
+        'source_lang': widget.model.sourceLang.nameEn,
+        'target_lang': widget.model.targetLang.nameEn,
+      });
       final result = await _service.translateDocument(
         sourceText: sourceText,
         marian: widget.marian,
@@ -153,6 +159,7 @@ class _DocumentTranslationPageState extends State<DocumentTranslationPage> {
           _phase = _DocPhase.idle;
           _translatedText = null;
         });
+        Aptabase.instance.trackEvent('document_translation_cancelled');
         return;
       }
 
@@ -160,11 +167,17 @@ class _DocumentTranslationPageState extends State<DocumentTranslationPage> {
         _phase = _DocPhase.done;
         _translatedText = result.text;
       });
+      Aptabase.instance.trackEvent('document_translation_completed', {
+        'chunks': result.chunkCount,
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _phase = _DocPhase.error;
         _error = e.toString();
+      });
+      Aptabase.instance.trackEvent('document_translation_error', {
+        'error': e.toString(),
       });
     }
   }
@@ -187,6 +200,7 @@ class _DocumentTranslationPageState extends State<DocumentTranslationPage> {
     if (!mounted) return;
     if (saved.isEmpty) return; // user cancelled — keep preview
 
+    Aptabase.instance.trackEvent('document_translation_saved');
     setState(() {
       _phase = _DocPhase.done;
       _savedPath = saved;
@@ -197,6 +211,7 @@ class _DocumentTranslationPageState extends State<DocumentTranslationPage> {
   Future<void> _shareSaved() async {
     final path = _savedPath;
     final text = _translatedText;
+    Aptabase.instance.trackEvent('document_translation_shared');
     if (path != null && path.isNotEmpty && File(path).existsSync()) {
       await SharePlus.instance.share(
         ShareParams(files: [XFile(path)], text: 'Traduction Malinali'),

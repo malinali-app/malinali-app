@@ -46,36 +46,42 @@ class FakeAudioRecorder extends Fake implements AudioRecorder {
 
 void main() {
   group('SpeechRecognitionService Recording Lifecycle', () {
-    test('startListening starts audio stream and stopListening stops recorder cleanly', () async {
-      final fakeRecorder = FakeAudioRecorder();
-      final service = SpeechRecognitionService(
-        audioRecorder: fakeRecorder,
-        modelService: VoskModelService(),
-      );
+    test(
+      'startListening starts audio stream and stopListening stops recorder cleanly',
+      () async {
+        final fakeRecorder = FakeAudioRecorder();
+        final service = SpeechRecognitionService(
+          audioRecorder: fakeRecorder,
+          modelService: VoskModelService(),
+        );
 
-      expect(service.isListening, isFalse);
+        expect(service.isListening, isFalse);
 
-      final stream = await fakeRecorder.startStream(
-        const RecordConfig(encoder: AudioEncoder.pcm16bits),
-      );
-      expect(await fakeRecorder.isRecording(), isTrue);
+        await fakeRecorder.startStream(
+          const RecordConfig(encoder: AudioEncoder.pcm16bits),
+        );
+        expect(await fakeRecorder.isRecording(), isTrue);
 
-      await service.stopListening();
-      expect(service.isListening, isFalse);
-      expect(fakeRecorder.stopCalled, isTrue);
-      expect(await fakeRecorder.isRecording(), isFalse);
-    });
+        await service.stopListening();
+        expect(service.isListening, isFalse);
+        expect(fakeRecorder.stopCalled, isTrue);
+        expect(await fakeRecorder.isRecording(), isFalse);
+      },
+    );
 
-    test('Calling stopListening is safe and sets isListening to false', () async {
-      final fakeRecorder = FakeAudioRecorder();
-      final service = SpeechRecognitionService(
-        audioRecorder: fakeRecorder,
-        modelService: VoskModelService(),
-      );
+    test(
+      'Calling stopListening is safe and sets isListening to false',
+      () async {
+        final fakeRecorder = FakeAudioRecorder();
+        final service = SpeechRecognitionService(
+          audioRecorder: fakeRecorder,
+          modelService: VoskModelService(),
+        );
 
-      // Should not throw even when not started
-      await service.stopListening();
-      expect(service.isListening, isFalse);
-    });
+        // Should not throw even when not started
+        await service.stopListening();
+        expect(service.isListening, isFalse);
+      },
+    );
   });
 }

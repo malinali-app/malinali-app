@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:aptabase_flutter/aptabase_flutter.dart';
 import 'package:filebridge/filebridge.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -62,15 +63,16 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
   bool get _showGlimpse =>
       _transcript != null && _transcript!.trim().isNotEmpty;
 
-  bool get _canExport =>
-      _showGlimpse && _phase != _AudioPhase.working;
+  bool get _canExport => _showGlimpse && _phase != _AudioPhase.working;
 
   @override
   void initState() {
     super.initState();
-    _speech = widget.speechService ??
+    _speech =
+        widget.speechService ??
         SpeechRecognitionService(modelService: widget.voskService);
-    _service = widget.transcriptionService ??
+    _service =
+        widget.transcriptionService ??
         AudioTranscriptionService(
           transcriber: VoskWaveformTranscriber(
             speech: _speech,
@@ -156,6 +158,9 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
       }
 
       final workDir = await audioSttWorkDirectory();
+      Aptabase.instance.trackEvent('audio_transcription_started', {
+        'vosk_model': widget.voskModel?.name ?? 'unknown',
+      });
       final result = await _service.transcribeFile(
         File(path),
         workDirectory: workDir,
@@ -186,6 +191,7 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
           _phase = _AudioPhase.idle;
           _statusLabel = 'Annulé';
         });
+        Aptabase.instance.trackEvent('audio_transcription_cancelled');
         return;
       }
 
@@ -195,6 +201,7 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
           _error = 'Aucune parole détectée dans ce fichier.';
           _transcript = null;
         });
+        Aptabase.instance.trackEvent('audio_transcription_empty');
         return;
       }
 
@@ -203,11 +210,15 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
         _transcript = result.text;
         _statusLabel = 'Terminé — vérifiez l’aperçu';
       });
+      Aptabase.instance.trackEvent('audio_transcription_completed');
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _phase = _AudioPhase.error;
         _error = e.toString();
+      });
+      Aptabase.instance.trackEvent('audio_transcription_error', {
+        'error': e.toString(),
       });
     }
   }
@@ -226,6 +237,7 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
     if (!mounted) return;
     if (saved.isEmpty) return; // user cancelled — keep preview
 
+    Aptabase.instance.trackEvent('audio_transcription_saved');
     setState(() {
       _phase = _AudioPhase.done;
       _savedPath = saved;
@@ -236,6 +248,7 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
   Future<void> _share() async {
     final path = _savedPath;
     final text = _transcript;
+    Aptabase.instance.trackEvent('audio_transcription_shared');
     if (path != null && path.isNotEmpty && File(path).existsSync()) {
       await SharePlus.instance.share(
         ShareParams(files: [XFile(path)], text: 'Transcription Malinali'),
@@ -266,12 +279,11 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
     final showGlimpse = _showGlimpse;
     final canExport = _canExport;
     final voskLabel =
-        widget.voskModel?.langText ?? VoskModelService.assetFrenchModel.langText;
+        widget.voskModel?.langText ??
+        VoskModelService.assetFrenchModel.langText;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Transcription audio'),
-      ),
+      appBar: AppBar(title: const Text('Transcription audio')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -286,24 +298,24 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
                     Text(
                       'Note vocale hors-ligne',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: MalinaliChrome.yellowBorder,
-                          ),
+                        fontWeight: FontWeight.w700,
+                        color: MalinaliChrome.yellowBorder,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       'Chargez un audio (.opus WhatsApp / .ogg / .wav). ',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: MalinaliChrome.onBlue,
-                          ),
+                        color: MalinaliChrome.onBlue,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       'Modèle voix : $voskLabel',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: MalinaliChrome.mutedOnBlue,
-                          ),
+                        fontWeight: FontWeight.w600,
+                        color: MalinaliChrome.mutedOnBlue,
+                      ),
                     ),
                   ],
                 ),
@@ -321,9 +333,7 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
             ),
             const SizedBox(height: 12),
             if (_phase == _AudioPhase.working) ...[
-              LinearProgressIndicator(
-                value: _fraction > 0 ? _fraction : null,
-              ),
+              LinearProgressIndicator(value: _fraction > 0 ? _fraction : null),
               const SizedBox(height: 8),
               Text(
                 _statusLabel,
@@ -364,9 +374,9 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
                     child: Text(
                       _savedPath!,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: MalinaliChrome.success,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        color: MalinaliChrome.success,
+                        fontWeight: FontWeight.w600,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -382,9 +392,9 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
                     child: Text(
                       'Aperçu (lecture seule)',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: MalinaliChrome.onBlue,
-                          ),
+                        fontWeight: FontWeight.w700,
+                        color: MalinaliChrome.onBlue,
+                      ),
                     ),
                   ),
                   if (canExport) ...[

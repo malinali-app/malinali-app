@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:aptabase_flutter/aptabase_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:languages_dart/languages_dart.dart';
@@ -289,6 +290,11 @@ class _TranslatePageState extends State<TranslatePage> {
           model.modelId: true,
         };
       });
+      Aptabase.instance.trackEvent('model_switched', {
+        'model_id': model.modelId,
+        'source_lang': model.sourceLang.nameEn,
+        'target_lang': model.targetLang.nameEn,
+      });
       await _updateVoskModelForSource();
     } catch (e) {
       if (mounted) {
@@ -327,6 +333,11 @@ class _TranslatePageState extends State<TranslatePage> {
       );
       if (!mounted) return;
       setState(() => _output = translated.trim());
+      Aptabase.instance.trackEvent('text_translation_performed', {
+        'source_lang': _sourceLang.nameEn,
+        'target_lang': _targetLang.nameEn,
+        'model_id': _selectedModel?.modelId ?? 'unknown',
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString());
@@ -347,6 +358,9 @@ class _TranslatePageState extends State<TranslatePage> {
       return;
     }
     setState(() => _listening = true);
+    Aptabase.instance.trackEvent('voice_input_started', {
+      'source_lang': _sourceLang.nameEn,
+    });
     try {
       await speech.startListening();
     } catch (e) {
@@ -356,6 +370,9 @@ class _TranslatePageState extends State<TranslatePage> {
           _error = e.toString();
         });
       }
+      Aptabase.instance.trackEvent('voice_input_error', {
+        'error': e.toString(),
+      });
     }
   }
 
@@ -403,9 +420,11 @@ class _TranslatePageState extends State<TranslatePage> {
           _isVoskModelDownloaded = true;
         });
         await _initSpeechForModel(model);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saisie vocale activée pour ${model.langText}')),
-        );
+        if(mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Saisie vocale activée pour ${model.langText}')),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -426,6 +445,7 @@ class _TranslatePageState extends State<TranslatePage> {
   Future<void> _copyOutput() async {
     if (_output.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: _output));
+    Aptabase.instance.trackEvent('output_copied');
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Copié')),
@@ -434,12 +454,14 @@ class _TranslatePageState extends State<TranslatePage> {
 
   Future<void> _shareOutput() async {
     if (_output.isEmpty) return;
+    Aptabase.instance.trackEvent('output_shared');
     await SharePlus.instance.share(ShareParams(text: _output));
   }
 
   void _openDocumentTranslation() {
     final model = _selectedModel;
     if (model == null || _loadingModel) return;
+    Aptabase.instance.trackEvent('document_translation_page_opened');
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -453,6 +475,9 @@ class _TranslatePageState extends State<TranslatePage> {
 
   Future<void> _openAudioTranscription({String? initialAudioPath}) async {
     if (_loadingModel) return;
+    Aptabase.instance.trackEvent('audio_transcription_page_opened', {
+      'has_initial_path': initialAudioPath != null,
+    });
     final srcName =
         _sourceLang.name.isEmpty ? _sourceLang.nameEn : _sourceLang.name;
     final targetName =
@@ -483,6 +508,7 @@ class _TranslatePageState extends State<TranslatePage> {
   }
 
   void _showSettings() async {
+    Aptabase.instance.trackEvent('settings_opened');
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
