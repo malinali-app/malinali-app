@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:languages_dart/languages_dart.dart';
 import 'package:malinali/generated/hf_token.g.dart';
+import 'package:malinali/services/african_helsinki_models.dart';
 
 class TranslationModel {
   final Language sourceLang;
@@ -21,6 +22,8 @@ class TranslationModel {
   final bool isCustom;
   /// Approximate download size shown in the settings confirm dialog.
   final String? downloadSizeHint;
+  /// Optional OPUS card score shown discreetly in the model list (e.g. `BLEU 34.1`).
+  final String? qualityHint;
 
   TranslationModel({
     required this.sourceLang,
@@ -31,6 +34,7 @@ class TranslationModel {
     this.authToken,
     this.isCustom = false,
     this.downloadSizeHint,
+    this.qualityHint,
   });
 
   String get _sourceName => sourceLang.name.isEmpty ? sourceLang.nameEn : sourceLang.name;
@@ -55,9 +59,36 @@ class TranslationModel {
         'authToken': authToken,
         'isCustom': true,
         'downloadSizeHint': downloadSizeHint,
+        'qualityHint': qualityHint,
+      };
+
+  /// Full snapshot for last-selected-model persistence (boot / resume).
+  Map<String, dynamic> toPreferenceJson() => {
+        'modelId': modelId,
+        'sourceIso': sourceLang.localeIntl.locale.languageCode,
+        'targetIso': targetLang.localeIntl.locale.languageCode,
+        'sourceName': _sourceName,
+        'targetName': _targetName,
+        'requiresAuth': requiresAuth || (authToken != null && authToken!.isNotEmpty),
+        'authToken': authToken,
+        'isCustom': isCustom,
+        'isAsset': isAsset,
+        'downloadSizeHint': downloadSizeHint,
+        'qualityHint': qualityHint,
       };
 
   static TranslationModel? fromJson(Map<String, dynamic> json) {
+    return _fromJsonMap(json, forceCustom: true);
+  }
+
+  static TranslationModel? fromPreferenceJson(Map<String, dynamic> json) {
+    return _fromJsonMap(json, forceCustom: false);
+  }
+
+  static TranslationModel? _fromJsonMap(
+    Map<String, dynamic> json, {
+    required bool forceCustom,
+  }) {
     final modelId = json['modelId'] as String?;
     if (modelId == null || modelId.isEmpty) return null;
     final sourceIso = (json['sourceIso'] as String? ?? '').toLowerCase();
@@ -69,17 +100,17 @@ class TranslationModel {
         (l) => l.localeIntl.locale.languageCode.toLowerCase() == sourceIso,
       );
     } catch (_) {
-      source = null;
+      source = africanLanguageByIso(sourceIso);
     }
     try {
       target = Languages.defaultLanguages.firstWhere(
         (l) => l.localeIntl.locale.languageCode.toLowerCase() == targetIso,
       );
     } catch (_) {
-      target = null;
+      target = africanLanguageByIso(targetIso);
     }
-    // Fulah / Pulaar often missing as a catalog entry.
-    if (target == null &&
+    // Fulah / Pulaar display name override when persisted as Pulaar.
+    if (target != null &&
         (targetIso == 'ff' ||
             targetIso == 'fuv' ||
             (json['targetName'] as String?)?.toLowerCase().contains('pulaar') ==
@@ -96,11 +127,13 @@ class TranslationModel {
       sourceLang: source,
       targetLang: target,
       modelId: modelId,
+      isAsset: json['isAsset'] == true,
       requiresAuth: json['requiresAuth'] == true ||
           (token != null && token.isNotEmpty),
       authToken: token,
-      isCustom: true,
+      isCustom: forceCustom || json['isCustom'] == true,
       downloadSizeHint: json['downloadSizeHint'] as String?,
+      qualityHint: json['qualityHint'] as String?,
     );
   }
 }
@@ -109,11 +142,12 @@ class TranslationModelService {
   final Dio _dio = Dio();
   static const String _xenovaAuthor = 'Xenova';
 
-  /// Boot default: small public Xenova FR→EN (single tokenizer.json).
+  /// Boot default: tiny public Helsinki FR→EN (25M params).
   static final TranslationModel defaultBootModel = TranslationModel(
     sourceLang: Languages.french,
     targetLang: Languages.english,
-    modelId: 'Xenova/opus-mt-fr-en',
+    modelId: 'Helsinki-NLP/opus-mt_tiny_fra-eng',
+    downloadSizeHint: '~75 Mo',
   );
 
   /// Pre-defined private models (MOAT) — downloaded on demand from HF.
@@ -131,10 +165,11 @@ class TranslationModelService {
     ),
   ];
 
-  /// Fetch all available models that are GUARANTEED to work.
+  /// Fetch discoverable models (Xenova + curated African Helsinki bilaterals).
   Future<List<TranslationModel>> fetchAllAvailableModels() async {
     final List<TranslationModel> models = [];
     models.addAll(privateModels);
+    models.addAll(_curatedAfricanHelsinkiModels());
     models.addAll(await loadCustomModels());
 
     try {
@@ -185,6 +220,30 @@ class TranslationModelService {
     return deduped;
   }
 
+  /// Curated Helsinki African bilaterals (scores from OPUS cards).
+  @visibleForTesting
+  List<TranslationModel> debugCuratedAfricanModels() =>
+      _curatedAfricanHelsinkiModels();
+
+  List<TranslationModel> _curatedAfricanHelsinkiModels() {
+    final out = <TranslationModel>[];
+    for (final pair in kAfricanHelsinkiOpusPairs) {
+      final source = _getLanguageByIso(pair.sourceIso);
+      final target = _getLanguageByIso(pair.targetIso);
+      if (source == null || target == null) continue;
+      out.add(
+        TranslationModel(
+          sourceLang: source,
+          targetLang: target,
+          modelId: pair.modelId,
+          downloadSizeHint: '~290 Mo',
+          qualityHint: formatOpusBleuHint(pair.qualityHint),
+        ),
+      );
+    }
+    return out;
+  }
+
   /// Keep a single model per source→target ISO pair.
   /// Exception: BYO (custom) models are NOT deduped, allowing multiple models per pair.
   /// If a custom model exists for a pair, it hides the non-custom ones for that pair.
@@ -224,8 +283,13 @@ class TranslationModelService {
     }
     if (model.modelId == defaultBootModel.modelId) return 1;
     if (model.modelId.startsWith('Xenova/')) return 2;
-    if (model.requiresAuth) return 3;
-    return 4;
+    if (model.modelId.startsWith('malinali-app/')) return 3;
+    if (model.modelId.startsWith('Helsinki-NLP/') &&
+        model.qualityHint != null) {
+      return 4;
+    }
+    if (model.requiresAuth) return 5;
+    return 6;
   }
 
   /// Preferred model for a source→target ISO pair from [models].
@@ -498,12 +562,13 @@ class TranslationModelService {
   }
 
   Language? _getLanguageByIso(String iso) {
+    final code = iso.toLowerCase();
     try {
       return Languages.defaultLanguages.firstWhere(
-        (l) => l.localeIntl.locale.languageCode.toLowerCase() == iso.toLowerCase(),
+        (l) => l.localeIntl.locale.languageCode.toLowerCase() == code,
       );
     } catch (_) {
-      return null;
+      return africanLanguageByIso(code);
     }
   }
 
@@ -566,33 +631,14 @@ class TranslationModelService {
         );
       } on DioException catch (e) {
         if (e.response?.statusCode == 404 && filename == 'model.safetensors') {
-          if (model.modelId.startsWith('Xenova/')) {
-            final namePart = model.modelId.split('/').last;
-            final helsinkiId = 'Helsinki-NLP/$namePart';
-            bool downloaded = false;
-
-            // 1. Try Helsinki-NLP main branch
-            try {
-              await _downloadOneFile(helsinkiId, modelDir, 'model.safetensors');
-              downloaded = true;
-            } catch (_) {}
-
-            // 2. Try SFconvertbot PR refs (Hugging Face auto-converts to safetensors via PR refs)
-            if (!downloaded) {
-              for (final pr in ['refs%2Fpr%2F1', 'refs%2Fpr%2F2', 'refs%2Fpr%2F3']) {
-                try {
-                  await _downloadOneFile(helsinkiId, modelDir, 'model.safetensors', revision: pr);
-                  downloaded = true;
-                  break;
-                } catch (_) {}
-              }
-            }
-
-            if (!downloaded) {
-              throw Exception('Le modèle n\'a pas pu être téléchargé (poids introuvables).');
-            }
-          } else {
-            throw Exception('Le modèle n\'a pas pu être téléchargé (fichiers incompatibles).');
+          final bool downloaded = await _downloadSafetensorsWithFallbacks(
+            model,
+            modelDir,
+          );
+          if (!downloaded) {
+            throw Exception(
+              'Le modèle n\'a pas pu être téléchargé (poids safetensors introuvables).',
+            );
           }
         } else {
           rethrow;
@@ -600,16 +646,25 @@ class TranslationModelService {
       }
     }
 
-    // 2. Tokenizers — Xenova opus-mt: single tokenizer.json
-    final isOpusMt = model.modelId.toLowerCase().contains('opus-mt-');
+    // 2. Tokenizers — Helsinki / Xenova / Malinali-app fallbacks
+    final isOpusMt = model.modelId.toLowerCase().contains('opus-mt-') || 
+                     model.modelId.contains('_tiny_');
     if (isOpusMt && !model.requiresAuth) {
-      final namePart = model.modelId.split('/').last.toLowerCase();
-      final xenovaId = 'Xenova/$namePart';
-      for (final filename in ['tokenizer.json', 'tokenizer-enc.json', 'tokenizer-dec.json']) {
-        try {
-          await _downloadOneFile(xenovaId, modelDir, filename);
-          return modelDir;
-        } catch (_) {}
+      final namePart = model.modelId.split('/').last;
+      final fallbacks = [
+        'Xenova/$namePart',
+        'malinali-app/$namePart',
+      ];
+      
+      for (final repoId in fallbacks) {
+        for (final filename in ['tokenizer.json', 'tokenizer-enc.json', 'tokenizer-dec.json']) {
+          try {
+            await _downloadOneFile(repoId.toLowerCase(), modelDir, filename);
+            // If we found a tokenizer.json, we might still need -enc/-dec if it's a dual tokenizer repo,
+            // but usually Xenova/Malinali-app provide what's needed.
+            return modelDir;
+          } catch (_) {}
+        }
       }
       for (final filename in ['tokenizer.json', 'tokenizer-enc.json']) {
         try {
@@ -650,9 +705,52 @@ class TranslationModelService {
     } catch (_) {}
 
     throw Exception(
-      'Aucun tokenizer compatible trouvé (format JSON requis). '
+      'Aucun tokenizer JSON pour ${model.modelId}. '
+      'Les dépôts Helsinki bruts (source.spm) nécessitent une conversion '
+      '(scripts/convert_tokenizer.py) ou un miroir Xenova. '
       'Manquant: ${dualMissing.join(', ')}',
     );
+  }
+
+  /// Helsinki / Xenova weights: try the repo itself, then SFconvertbot PR refs.
+  Future<bool> _downloadSafetensorsWithFallbacks(
+    TranslationModel model,
+    Directory modelDir,
+  ) async {
+    final candidates = <String>[];
+    if (model.modelId.startsWith('Xenova/')) {
+      candidates.add('Helsinki-NLP/${model.modelId.split('/').last}');
+    }
+    if (model.modelId.startsWith('Helsinki-NLP/')) {
+      candidates.add(model.modelId);
+    }
+    // Always try Helsinki twin when the id looks like opus-mt-*.
+    final namePart = model.modelId.split('/').last;
+    if (namePart.toLowerCase().startsWith('opus-mt-')) {
+      final helsinkiId = 'Helsinki-NLP/$namePart';
+      if (!candidates.contains(helsinkiId)) {
+        candidates.add(helsinkiId);
+      }
+    }
+
+    for (final repoId in candidates) {
+      try {
+        await _downloadOneFile(repoId, modelDir, 'model.safetensors');
+        return true;
+      } catch (_) {}
+      for (final pr in ['refs%2Fpr%2F1', 'refs%2Fpr%2F2', 'refs%2Fpr%2F3']) {
+        try {
+          await _downloadOneFile(
+            repoId,
+            modelDir,
+            'model.safetensors',
+            revision: pr,
+          );
+          return true;
+        } catch (_) {}
+      }
+    }
+    return false;
   }
 
   Future<void> _downloadOneFile(

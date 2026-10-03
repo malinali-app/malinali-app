@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:malinali/services/vosk_model_service.dart';
+import 'package:malinali/theme/malinali_chrome.dart';
 
 class TranscriptionSettingsPage extends StatefulWidget {
   final VoskModelService voskService;
@@ -182,7 +183,7 @@ class _TranscriptionSettingsPageState extends State<TranscriptionSettingsPage> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade600,
+              backgroundColor: MalinaliChrome.redAccent,
               foregroundColor: Colors.white,
             ),
             onPressed: () => Navigator.pop(context, true),
@@ -231,6 +232,7 @@ class _TranscriptionSettingsPageState extends State<TranscriptionSettingsPage> {
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: TextField(
+              style: const TextStyle(color: MalinaliChrome.onBlue),
               decoration: InputDecoration(
                 hintText: 'Rechercher une langue vocale...',
                 prefixIcon: const Icon(Icons.search),
@@ -263,13 +265,19 @@ class _TranscriptionSettingsPageState extends State<TranscriptionSettingsPage> {
               children: [
                 Text(
                   '${_filteredModels.length} modèle(s) VOSK small',
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
+                  style: const TextStyle(
+                    color: MalinaliChrome.mutedOnBlue,
                     fontSize: 13,
                   ),
                 ),
                 const Spacer(),
-                const Text('Téléchargé', style: TextStyle(fontSize: 12)),
+                const Text(
+                  'Téléchargé',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: MalinaliChrome.mutedOnBlue,
+                  ),
+                ),
                 Transform.scale(
                   scale: 0.8,
                   child: Switch(
@@ -290,7 +298,12 @@ class _TranscriptionSettingsPageState extends State<TranscriptionSettingsPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredModels.isEmpty
-                    ? const Center(child: Text('Aucun modèle vocal trouvé'))
+                    ? const Center(
+                        child: Text(
+                          'Aucun modèle vocal trouvé',
+                          style: TextStyle(color: MalinaliChrome.mutedOnBlue),
+                        ),
+                      )
                     : ListView.builder(
                         itemCount: _filteredModels.length,
                         itemBuilder: (context, index) {
@@ -308,10 +321,10 @@ class _TranscriptionSettingsPageState extends State<TranscriptionSettingsPage> {
                                   ? Icons.mic
                                   : Icons.mic_none,
                               color: isSelected
-                                  ? Colors.blue
+                                  ? MalinaliChrome.yellowBorder
                                   : (model.isAsset || isDownloaded
-                                      ? Colors.green
-                                      : Colors.grey),
+                                      ? MalinaliChrome.success
+                                      : MalinaliChrome.mutedOnBlue),
                             ),
                             title: Text(
                               model.langText.isEmpty ? model.lang : model.langText,
@@ -319,6 +332,7 @@ class _TranscriptionSettingsPageState extends State<TranscriptionSettingsPage> {
                                 fontWeight: isSelected
                                     ? FontWeight.bold
                                     : FontWeight.normal,
+                                color: MalinaliChrome.onBlue,
                               ),
                             ),
                             subtitle: Column(
@@ -329,7 +343,7 @@ class _TranscriptionSettingsPageState extends State<TranscriptionSettingsPage> {
                                   const Text(
                                     'Intégré à l\'application',
                                     style: TextStyle(
-                                      color: Colors.green,
+                                      color: MalinaliChrome.success,
                                       fontSize: 12,
                                     ),
                                   )
@@ -344,7 +358,7 @@ class _TranscriptionSettingsPageState extends State<TranscriptionSettingsPage> {
                                   const Text(
                                     'Téléchargé (prêt)',
                                     style: TextStyle(
-                                      color: Colors.green,
+                                      color: MalinaliChrome.success,
                                       fontSize: 12,
                                     ),
                                   ),
@@ -353,7 +367,10 @@ class _TranscriptionSettingsPageState extends State<TranscriptionSettingsPage> {
                             trailing: isDownloading
                                 ? Text(
                                     '${(progress * 100).toStringAsFixed(0)}%',
-                                    style: const TextStyle(fontSize: 12),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: MalinaliChrome.mutedOnBlue,
+                                    ),
                                   )
                                 : Row(
                                     mainAxisSize: MainAxisSize.min,
@@ -362,7 +379,7 @@ class _TranscriptionSettingsPageState extends State<TranscriptionSettingsPage> {
                                         IconButton(
                                           icon: const Icon(
                                             Icons.delete_outline,
-                                            color: Colors.redAccent,
+                                            color: MalinaliChrome.redAccent,
                                           ),
                                           tooltip: 'Supprimer',
                                           onPressed: () => _deleteModel(model),
@@ -374,7 +391,10 @@ class _TranscriptionSettingsPageState extends State<TranscriptionSettingsPage> {
                                           onPressed: () => _downloadModel(model),
                                         ),
                                       if (isSelected)
-                                        const Icon(Icons.check, color: Colors.blue),
+                                        const Icon(
+                                          Icons.check,
+                                          color: MalinaliChrome.yellowBorder,
+                                        ),
                                     ],
                                   ),
                             onTap: () {

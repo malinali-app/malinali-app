@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:languages_dart/languages_dart.dart';
 import 'package:malinali/services/translation_model_service.dart';
+import 'package:malinali/theme/malinali_chrome.dart';
 import 'package:malinali/widgets/language_picker_sheet.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Advanced: register a Hugging Face Marian / Candle pack (Bring Your Own).
+/// Register a Hugging Face MarianMT pack (bring your own).
 class ByoMarianPage extends StatefulWidget {
   const ByoMarianPage({super.key, required this.modelService});
 
@@ -99,22 +100,22 @@ class _ByoMarianPageState extends State<ByoMarianPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Bring Your Own — MarianMT')),
+      appBar: AppBar(title: const Text('Mon modèle')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _ExplanationCard(
-            onOpenDocs:
-                () => launchUrl(
-                  Uri.parse(
-                    'https://huggingface.co/docs/hub/models-downloading',
-                  ),
+          Text(
+            'MarianMT uniquement — dépôt Hugging Face.',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: MalinaliChrome.mutedOnBlue,
+                  fontWeight: FontWeight.w600,
                 ),
           ),
           const SizedBox(height: 16),
           TextField(
             controller: _repoController,
             enabled: !_busy,
+            style: const TextStyle(color: MalinaliChrome.onBlue),
             decoration: const InputDecoration(
               labelText: 'Identifiant Hugging Face',
               hintText: 'ex. Xenova/opus-mt-fr-en ou org/mon-finetune',
@@ -127,6 +128,7 @@ class _ByoMarianPageState extends State<ByoMarianPage> {
             controller: _tokenController,
             enabled: !_busy,
             obscureText: true,
+            style: const TextStyle(color: MalinaliChrome.onBlue),
             decoration: const InputDecoration(
               labelText: 'Jeton HF (optionnel, dépôts privés)',
               hintText: 'hf_… lecture seule recommandée',
@@ -142,8 +144,8 @@ class _ByoMarianPageState extends State<ByoMarianPage> {
                   onPressed: _busy ? null : () => _pickLang(source: true),
                   child: Text(
                     _sourceLang == null
-                        ? 'Source (auto si opus-mt-*)'
-                        : 'Source: ${languageDisplayName(_sourceLang!)}',
+                        ? 'Langue Source'
+                        : languageDisplayName(_sourceLang!),
                   ),
                 ),
               ),
@@ -153,8 +155,8 @@ class _ByoMarianPageState extends State<ByoMarianPage> {
                   onPressed: _busy ? null : () => _pickLang(source: false),
                   child: Text(
                     _targetLang == null
-                        ? 'Cible (auto si opus-mt-*)'
-                        : 'Cible: ${languageDisplayName(_targetLang!)}',
+                        ? 'Langue Cible'
+                        : languageDisplayName(_targetLang!),
                   ),
                 ),
               ),
@@ -177,30 +179,33 @@ class _ByoMarianPageState extends State<ByoMarianPage> {
             const SizedBox(height: 12),
             Text(
               _error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              style: const TextStyle(color: MalinaliChrome.redAccent),
             ),
           ],
           if (_success != null) ...[
             const SizedBox(height: 12),
-            Text(_success!, style: TextStyle(color: Colors.green.shade800)),
+            Text(
+              _success!,
+              style: const TextStyle(color: MalinaliChrome.success),
+            ),
           ],
           const SizedBox(height: 24),
           Text(
             'Modèles ajoutés',
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: MalinaliChrome.onBlue,
+                ),
           ),
           const SizedBox(height: 8),
           if (_custom.isEmpty)
             const Text(
               'Aucun modèle personnalisé pour l’instant.',
-              style: TextStyle(color: Colors.black54),
+              style: TextStyle(color: MalinaliChrome.mutedOnBlue),
             )
           else
             ..._custom.map(
               (m) => Card(
-                color: const Color(
-                  0xFFF0FDF4,
-                ), // Très léger vert (green.shade50)
+                color: MalinaliChrome.customPanel,
                 child: ListTile(
                   title: Text(m.displayName),
                   subtitle: Text(m.modelId),
@@ -213,8 +218,63 @@ class _ByoMarianPageState extends State<ByoMarianPage> {
                 ),
               ),
             ),
+          const SizedBox(height: 28),
+          _ExplanationCard(
+            onOpenDocs:
+                () => launchUrl(
+                  Uri.parse(
+                    'https://huggingface.co/docs/hub/models-downloading',
+                  ),
+                ),
+          ),
+          const SizedBox(height: 16),
+          const _MarianCredit(),
         ],
       ),
+    );
+  }
+}
+
+class _MarianCredit extends StatelessWidget {
+  const _MarianCredit();
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        const Text(
+          'Basé sur ',
+          style: TextStyle(
+            fontFamily: 'NotoSans',
+            color: MalinaliChrome.mutedOnBlue,
+            fontSize: 12,
+            height: 1.35,
+          ),
+        ),
+        InkWell(
+          onTap: () => launchUrl(Uri.parse('https://marian-nmt.github.io/')),
+          child: const Text(
+            'Marian',
+            style: TextStyle(
+              fontFamily: 'NotoSans',
+              color: MalinaliChrome.yellowBorder,
+              fontSize: 12,
+              height: 1.35,
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        ),
+        const Text(
+          ', framework de traduction neuronale.',
+          style: TextStyle(
+            fontFamily: 'NotoSans',
+            color: MalinaliChrome.mutedOnBlue,
+            fontSize: 12,
+            height: 1.35,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -226,46 +286,34 @@ class _ExplanationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = Theme.of(context).textTheme.bodyMedium;
+    const bodyStyle = TextStyle(
+      fontFamily: 'NotoSans',
+      color: MalinaliChrome.onBlue,
+      fontSize: 13,
+      height: 1.4,
+    );
     return Card(
-      color: const Color(0xFFEFF6FF),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Qu’est-ce qu’un modèle MarianMT « Candle » ?',
+              'Fichiers MarianMT requis',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF1E3A8A),
-              ),
+                    fontWeight: FontWeight.w700,
+                    color: MalinaliChrome.yellowBorder,
+                  ),
             ),
             const SizedBox(height: 8),
-            Text(
-              'Malinali charge des poids Marian (.safetensors) '
-              'via le moteur Rust Candle (marian_flutter)'
-              'Le dépôt Hugging Face doit exposer des fichiers prêts à l\'usage : ',
-              style: style,
-            ),
-            const SizedBox(height: 8),
-            const Text('• config.json — architecture Marian'),
-            const Text('• model.safetensors — poids (~75–285 Mo)'),
             const Text(
-              '• tokenizer.json — OU la paire tokenizer-enc.json + tokenizer-dec.json ',
+              'Le dépôt Hugging Face doit contenir : '
+              'config.json, model.safetensors, et tokenizer.json '
+              '(ou tokenizer-enc.json + tokenizer-dec.json). '
+              'Helsinki-NLP et Xenova/opus-mt-* fonctionnent tels quels.',
+              style: bodyStyle,
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Les dépôts Helsinki-NLP et Xenova/opus-mt-* fonctionnent tels quels.',
-              style: style,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Les langues sont déduites si le nom contient opus-mt-xx-yy '
-              '(ex. opus-mt-fr-en). Sinon, choisissez source et cible ci-dessous. ',
-              style: style,
-            ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             TextButton.icon(
               onPressed: onOpenDocs,
               icon: const Icon(Icons.open_in_new, size: 18),

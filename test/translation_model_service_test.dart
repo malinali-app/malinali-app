@@ -138,11 +138,30 @@ void main() {
       expect(fula.downloadSizeHint, '~285 Mo');
     });
 
-    test('boot default is public Xenova FR→EN', () {
+    test('boot default is public tiny Helsinki FR→EN', () {
       final boot = TranslationModelService.defaultBootModel;
-      expect(boot.modelId, 'Xenova/opus-mt-fr-en');
+      expect(boot.modelId, 'Helsinki-NLP/opus-mt_tiny_fra-eng');
       expect(boot.isAsset, isFalse);
       expect(boot.requiresAuth, isFalse);
+    });
+
+    test('curated African Helsinki bilaterals include Hausa/Yoruba with BLEU hints', () {
+      final service = TranslationModelService();
+      final african = service.debugCuratedAfricanModels();
+      expect(african.length, greaterThan(40));
+      expect(
+        african.any((m) => m.modelId == 'malinali-app/opus-mt-en-ha'),
+        isTrue,
+      );
+      expect(
+        african.any((m) => m.modelId == 'malinali-app/opus-mt-yo-en'),
+        isTrue,
+      );
+      final ha = african.firstWhere((m) => m.modelId == 'malinali-app/opus-mt-en-ha');
+      expect(ha.qualityHint, 'BLEU 34.1 / 100');
+      // Multilingual packs must stay out of the curated bilateral list.
+      expect(african.any((m) => m.modelId.contains('-mul')), isFalse);
+      expect(african.any((m) => m.modelId.contains('-alv')), isFalse);
     });
 
     test('fetchAllAvailableModels includes private HF Fula and Xenova', () async {
@@ -154,7 +173,36 @@ void main() {
         isTrue,
       );
       expect(models.any((m) => m.modelId.startsWith('Xenova/')), isTrue);
+      expect(models.any((m) => m.modelId == 'malinali-app/opus-mt-en-ha'), isTrue);
       expect(models.any((m) => m.modelId == 'assets/fr-pul'), isFalse);
+    });
+
+    test('preference JSON round-trips non-custom boot model fields', () {
+      final boot = TranslationModelService.defaultBootModel;
+      final restored = TranslationModel.fromPreferenceJson(boot.toPreferenceJson());
+      expect(restored, isNotNull);
+      expect(restored!.modelId, boot.modelId);
+      expect(restored.isCustom, isFalse);
+      expect(restored.isAsset, isFalse);
+      expect(restored.requiresAuth, isFalse);
+      expect(
+        restored.sourceLang.localeIntl.locale.languageCode,
+        'fr',
+      );
+      expect(
+        restored.targetLang.localeIntl.locale.languageCode,
+        'en',
+      );
+    });
+
+    test('preference JSON round-trips private Fula model', () {
+      final fula = TranslationModelService.privateModels.first;
+      final restored = TranslationModel.fromPreferenceJson(fula.toPreferenceJson());
+      expect(restored, isNotNull);
+      expect(restored!.modelId, fula.modelId);
+      expect(restored.requiresAuth, isTrue);
+      expect(restored.isCustom, isFalse);
+      expect(restored.downloadSizeHint, fula.downloadSizeHint);
     });
   });
 }

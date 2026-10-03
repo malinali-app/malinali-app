@@ -78,3 +78,13 @@ android/.kotlin/
 er/build
 /ecrit
 /scripts/prepare_app_assets.sh
+hobbit.txt
+test/fixtures/audio/PTT-20260928-WA0003.opus
+/hugging_face_malinali_secret.txt
+/.cache/
+tool/publish_african_candle.py
+/aptabase.txt
+/lib/secrets.dart
+/temp_model
+/model_upload_files
+/Malinali_do_not_delete

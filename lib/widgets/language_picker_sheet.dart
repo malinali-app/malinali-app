@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:languages_dart/languages_dart.dart';
+import 'package:malinali/theme/malinali_chrome.dart';
 
 /// Badge hints for a language row (offline MT / speech).
 class LanguagePickerBadges {
@@ -60,7 +61,7 @@ class LanguagePickerSheet extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: Colors.white,
+      backgroundColor: MalinaliChrome.bluePanel,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -124,7 +125,7 @@ class _LanguagePickerSheetState extends State<LanguagePickerSheet> {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey.shade300,
+                color: MalinaliChrome.onBlue.withValues(alpha: 0.35),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -140,14 +141,17 @@ class _LanguagePickerSheetState extends State<LanguagePickerSheet> {
                       fontFamily: 'NotoSans',
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF1E3A8A),
+                      color: MalinaliChrome.onBlue,
                     ),
                   ),
                 ),
                 IconButton(
                   tooltip: 'Fermer',
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, color: Color(0xFF64748B)),
+                  icon: const Icon(
+                    Icons.close,
+                    color: MalinaliChrome.mutedOnBlue,
+                  ),
                 ),
               ],
             ),
@@ -157,16 +161,23 @@ class _LanguagePickerSheetState extends State<LanguagePickerSheet> {
             child: TextField(
               controller: _searchController,
               autofocus: true,
-              style: const TextStyle(fontFamily: 'NotoSans', fontSize: 15),
+              style: const TextStyle(
+                fontFamily: 'NotoSans',
+                fontSize: 15,
+                color: MalinaliChrome.onBlue,
+              ),
               decoration: InputDecoration(
                 hintText: 'Rechercher (nom, anglais, code ISO)…',
                 hintStyle: TextStyle(
                   fontFamily: 'NotoSans',
-                  color: Colors.grey.shade500,
+                  color: MalinaliChrome.onBlue.withValues(alpha: 0.45),
                 ),
-                prefixIcon: const Icon(Icons.search, color: Color(0xFF2563EB)),
+                prefixIcon: const Icon(
+                  Icons.search,
+                  color: MalinaliChrome.blueChip,
+                ),
                 filled: true,
-                fillColor: const Color(0xFFF1F5F9),
+                fillColor: MalinaliChrome.blueBg,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -180,12 +191,12 @@ class _LanguagePickerSheetState extends State<LanguagePickerSheet> {
           ),
           Expanded(
             child: _filtered.isEmpty
-                ? Center(
+                ? const Center(
                     child: Text(
                       'Aucune langue trouvée',
                       style: TextStyle(
                         fontFamily: 'NotoSans',
-                        color: Colors.grey.shade600,
+                        color: MalinaliChrome.mutedOnBlue,
                       ),
                     ),
                   )
@@ -193,7 +204,7 @@ class _LanguagePickerSheetState extends State<LanguagePickerSheet> {
                     itemCount: _filtered.length,
                     separatorBuilder: (_, __) => Divider(
                       height: 1,
-                      color: Colors.grey.shade200,
+                      color: MalinaliChrome.whiteBorder.withValues(alpha: 0.12),
                     ),
                     itemBuilder: (context, index) {
                       final language = _filtered[index];
@@ -207,13 +218,15 @@ class _LanguagePickerSheetState extends State<LanguagePickerSheet> {
 
                       return ListTile(
                         selected: selected,
-                        selectedTileColor: const Color(0xFFEFF6FF),
+                        selectedTileColor:
+                            MalinaliChrome.blueAction.withValues(alpha: 0.22),
                         leading: CircleAvatar(
                           backgroundColor: selected
-                              ? const Color(0xFF2563EB)
-                              : const Color(0xFFE2E8F0),
-                          foregroundColor:
-                              selected ? Colors.white : const Color(0xFF1E3A8A),
+                              ? MalinaliChrome.blueAction
+                              : MalinaliChrome.blueBg,
+                          foregroundColor: selected
+                              ? Colors.white
+                              : MalinaliChrome.onBlue,
                           child: Text(
                             native.isEmpty
                                 ? '?'
@@ -229,7 +242,7 @@ class _LanguagePickerSheetState extends State<LanguagePickerSheet> {
                           style: const TextStyle(
                             fontFamily: 'NotoSans',
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF1E3A8A),
+                            color: MalinaliChrome.onBlue,
                           ),
                         ),
                         subtitle: Text(
@@ -237,9 +250,9 @@ class _LanguagePickerSheetState extends State<LanguagePickerSheet> {
                             if (english.isNotEmpty && english != native) english,
                             iso,
                           ].join(' · '),
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontFamily: 'NotoSans',
-                            color: Colors.grey.shade600,
+                            color: MalinaliChrome.mutedOnBlue,
                             fontSize: 13,
                           ),
                         ),
@@ -271,7 +284,7 @@ class _LanguagePickerSheetState extends State<LanguagePickerSheet> {
                               const SizedBox(width: 6),
                               const Icon(
                                 Icons.check_circle,
-                                color: Color(0xFF2563EB),
+                                color: MalinaliChrome.yellowBorder,
                               ),
                             ],
                           ],
@@ -305,7 +318,7 @@ class _BadgeIcon extends StatelessWidget {
       child: Icon(
         icon,
         size: 18,
-        color: ready ? Colors.green : const Color(0xFF2563EB),
+        color: ready ? MalinaliChrome.success : MalinaliChrome.blueChip,
       ),
     );
   }
