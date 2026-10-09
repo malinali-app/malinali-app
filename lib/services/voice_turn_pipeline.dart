@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:malinali/services/document_translation_service.dart';
 import 'package:malinali/services/marian_runtime.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/voice_speech_resolver.dart';
@@ -60,14 +61,21 @@ class VoiceTurnPipeline {
   Future<String> _translate(TranslationModel model, String text) async {
     final injected = translate;
     final prepared = model.prepareSourceText(text);
-    String result;
     if (injected != null) {
-      result = await injected(model, prepared);
-    } else {
-      final marian = await _loadMarian(model);
-      result = await marian.translate(prepared);
+      return await injected(model, prepared);
     }
-    return _stripPrefix(result.trim());
+
+    final marian = await _loadMarian(model);
+    final service = DocumentTranslationService(splitSentences: true);
+    // For voice, we join with spaces to keep the transcript natural.
+    final result = await service.translateDocument(
+      sourceText: text,
+      marian: marian,
+      config: kDocumentTranslationConfig,
+      prepareSource: (chunk) => model.prepareSourceText(chunk),
+      joiner: ' ',
+    );
+    return _stripPrefix(result.text.trim());
   }
 
   String _stripPrefix(String text) {

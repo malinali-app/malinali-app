@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:languages_dart/languages_dart.dart';
 import 'package:malinali/pages/document_translation_page.dart';
 import 'package:malinali/pages/translation_settings_page.dart';
+import 'package:malinali/services/document_translation_service.dart';
 import 'package:malinali/services/marian_runtime.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/tts_service.dart';
@@ -257,16 +258,27 @@ class _TranslatePageState extends State<TranslatePage> {
     });
 
     try {
-      final translated = await _marian.translate(
-        _selectedModel?.prepareSourceText(text) ?? text,
-        config: kStreetTranslationConfig,
+      // Use DocumentTranslationService to handle multiple sentences/longer text.
+      // We force splitSentences: true because MarianMT models often truncate 
+      // if they receive multiple sentences in a single call.
+      final service = DocumentTranslationService(splitSentences: true);
+      final result = await service.translateDocument(
+        sourceText: text,
+        marian: _marian,
+        config: kDocumentTranslationConfig,
+        prepareSource: (chunk) =>
+            _selectedModel?.prepareSourceText(chunk) ?? chunk,
+        joiner: ' ',
       );
+
       if (!mounted) return;
-      setState(() => _output = translated.trim());
+      setState(() => _output = result.text.trim());
+
       Aptabase.instance.trackEvent('text_translation_performed', {
         'source_lang': _sourceLang.nameEn,
         'target_lang': _targetLang.nameEn,
         'model_id': _selectedModel?.modelId ?? 'unknown',
+        'chunks': result.chunkCount,
       });
     } catch (e) {
       if (!mounted) return;

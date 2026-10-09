@@ -63,6 +63,7 @@ class DocumentTranslationResult {
 class DocumentTranslationService {
   DocumentTranslationService({
     this.maxChunkChars = defaultMaxChunkChars,
+    this.splitSentences = false,
   });
 
   /// Soft upper bound on source characters per Marian call.
@@ -70,6 +71,10 @@ class DocumentTranslationService {
   static const int defaultMaxChunkChars = 400;
 
   final int maxChunkChars;
+
+  /// When true, every sentence is its own chunk (ignores [maxChunkChars]).
+  /// Good for models that truncate multi-sentence inputs.
+  final bool splitSentences;
 
   /// Split [text] into translation units.
   List<String> chunkText(String text) {
@@ -87,11 +92,13 @@ class DocumentTranslationService {
 
     final chunks = <String>[];
     for (final paragraph in paragraphs) {
-      if (paragraph.length <= maxChunkChars) {
-        chunks.add(paragraph);
-        continue;
+      // Always split into sentences to handle MarianMT models that prefer 
+      // single-sentence inputs.
+      if (splitSentences) {
+        chunks.addAll(_splitSentences(paragraph));
+      } else {
+        chunks.addAll(_splitLongParagraph(paragraph));
       }
-      chunks.addAll(_splitLongParagraph(paragraph));
     }
     return chunks;
   }
@@ -180,6 +187,7 @@ class DocumentTranslationService {
     void Function(DocumentTranslationProgress progress)? onProgress,
     bool Function()? isCancelled,
     String Function(String chunk)? prepareSource,
+    String joiner = '\n\n',
   }) async {
     final chunks = chunkText(sourceText);
     if (chunks.isEmpty) {
@@ -207,7 +215,7 @@ class DocumentTranslationService {
           ),
         );
         return DocumentTranslationResult(
-          text: translated.join('\n\n'),
+          text: translated.join(joiner),
           chunkCount: chunks.length,
           cancelled: true,
         );
@@ -225,7 +233,7 @@ class DocumentTranslationService {
     }
 
     return DocumentTranslationResult(
-      text: translated.join('\n\n'),
+      text: translated.join(joiner),
       chunkCount: chunks.length,
       cancelled: false,
     );

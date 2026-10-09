@@ -49,11 +49,13 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
 
   int _recordDuration = 0;
   bool _isLocked = false;
+  bool _isInitializing = false;
   bool _showLottie = false;
   bool _suppressBars = false;
   bool _ownsRecorder = true;
   RecordState _recordState = RecordState.stop;
   String? _activePath;
+  String? _recordingBaseDir;
 
   double _cancelWidth = 0;
   final double _lockerHeight = 200;
@@ -79,7 +81,7 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
     );
     _controller.addListener(() => setState(() {}));
     _recordSub = _audioRecorder.onStateChanged().listen((state) {
-      setState(() => _recordState = state);
+      if (mounted) setState(() => _recordState = state);
       if (state == RecordState.stop) {
         _timer?.cancel();
         _recordDuration = 0;
@@ -89,6 +91,21 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
         _timer?.cancel();
       }
     });
+    _preWarm();
+  }
+
+  Future<void> _preWarm() async {
+    try {
+      // Pre-fetch and pre-create directory to save time during actual record start
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory(p.join(docs.path, 'voice_recordings'));
+      if (!dir.existsSync()) await dir.create(recursive: true);
+      _recordingBaseDir = dir.path;
+
+      // Also pre-check permission (don't request, just check if already granted)
+      // On some platforms, this might speed up the subsequent call.
+      await _audioRecorder.hasPermission();
+    } catch (_) {}
   }
 
   @override
@@ -124,16 +141,20 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
   }
 
   Future<void> _start() async {
-    if (!widget.enabled || _recordState != RecordState.stop) return;
+    if (!widget.enabled || _recordState != RecordState.stop || _isInitializing) return;
+    setState(() => _isInitializing = true);
     try {
-      if (!await _audioRecorder.hasPermission()) return;
-      final docs = await getApplicationDocumentsDirectory();
-      final dir = Directory(p.join(docs.path, 'voice_recordings'));
-      if (!dir.existsSync()) dir.createSync(recursive: true);
+      if (!await _audioRecorder.hasPermission()) {
+        if (mounted) setState(() => _isInitializing = false);
+        return;
+      }
+      
+      final String dirPath = _recordingBaseDir ?? (await getApplicationDocumentsDirectory()).path;
       final path = p.join(
-        dir.path,
+        dirPath,
         'audio_${DateTime.now().millisecondsSinceEpoch}.wav',
       );
+      
       await _audioRecorder.start(
         const RecordConfig(
           encoder: AudioEncoder.wav,
@@ -152,6 +173,8 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
       });
     } catch (e) {
       if (kDebugMode) debugPrint('VoiceRecordButton start: $e');
+    } finally {
+      if (mounted) setState(() => _isInitializing = false);
     }
   }
 
@@ -184,7 +207,7 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
   bool _isLockedGesture(Offset local) => local.dy < -35;
 
   Future<void> _cancelRecording() async {
-    if (_recordState == RecordState.stop && _activePath == null) return;
+    if (_recordState == RecordState.stop && _activePath == null && !_isInitializing) return;
     HapticFeedback.mediumImpact();
     setState(() {
       _showLottie = true;
@@ -210,7 +233,7 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
   }
 
   Future<void> _finishRecording() async {
-    if (_recordState == RecordState.stop && _activePath == null) return;
+    if (_recordState == RecordState.stop && _activePath == null && !_isInitializing) return;
     HapticFeedback.lightImpact();
     final path = await _stop();
 
@@ -374,11 +397,16 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
           if (!_isLocked)
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onLongPressDown: widget.enabled ? (_) => _controller.forward() : null,
+              onLongPressDown: widget.enabled
+                  ? (_) {
+                      _controller.forward();
+                      _start();
+                    }
+                  : null,
               onLongPress: widget.enabled
-                  ? () async {
+                  ? () {
                       HapticFeedback.mediumImpact();
-                      await _start();
+                      // We don't call _start() here anymore because it's started in onLongPressDown
                     }
                   : null,
               onLongPressMoveUpdate: (details) {
@@ -403,12 +431,23 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
                       }
                     }
                   : null,
-              onLongPressCancel: () {
+              onLongPressCancel: () async {
                 setState(() {
                   _dragDy = 0;
                   _dragDx = 0;
                 });
                 _controller.reverse();
+                // If it was just a tap, we started recording in onLongPressDown.
+                // We should stop and delete it silently.
+                await _stop();
+                final path = _activePath;
+                if (path != null) {
+                  try {
+                    final f = File(path);
+                    if (f.existsSync()) f.deleteSync();
+                  } catch (_) {}
+                }
+                _activePath = null;
               },
               child: Transform.translate(
                 offset: Offset(
@@ -431,11 +470,25 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
                         width: 2,
                       ),
                     ),
-                    child: Icon(
-                      Icons.mic,
-                      color: widget.enabled
-                          ? Colors.white
-                          : MalinaliChrome.onBlue.withValues(alpha: 0.5),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Icon(
+                          Icons.mic,
+                          color: widget.enabled
+                              ? Colors.white
+                              : MalinaliChrome.onBlue.withValues(alpha: 0.5),
+                        ),
+                        if (_isInitializing)
+                          const SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),

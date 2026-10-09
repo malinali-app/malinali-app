@@ -57,7 +57,9 @@ class _DocumentTranslationPageState extends State<DocumentTranslationPage> {
   @override
   void initState() {
     super.initState();
-    _service = widget.translationService ?? DocumentTranslationService();
+    _service =
+        widget.translationService ??
+        DocumentTranslationService(splitSentences: true);
   }
 
   @override

@@ -56,6 +56,16 @@ void main() {
     test('normalizes CRLF', () {
       expect(service.chunkText('A\r\n\r\nB'), ['A', 'B']);
     });
+
+    test('splitSentences: true forces one chunk per sentence', () {
+      final strictService = DocumentTranslationService(splitSentences: true);
+      const text = 'Phrase un. Phrase deux ! Phrase trois ?';
+      expect(strictService.chunkText(text), [
+        'Phrase un.',
+        'Phrase deux !',
+        'Phrase trois ?',
+      ]);
+    });
   });
 
   group('translateDocument', () {
