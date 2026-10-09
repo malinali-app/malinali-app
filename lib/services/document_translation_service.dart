@@ -72,12 +72,6 @@ class DocumentTranslationService {
   final int maxChunkChars;
 
   /// Split [text] into translation units.
-  ///
-  /// Strategy:
-  /// 1. Split on blank-line paragraphs when possible.
-  /// 2. Split oversized paragraphs on sentence boundaries.
-  /// 3. Hard-split remaining runs that still exceed [maxChunkChars].
-  @visibleForTesting
   List<String> chunkText(String text) {
     final normalized = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
     final trimmed = normalized.trim();
@@ -185,6 +179,7 @@ class DocumentTranslationService {
     TranslationConfig config = kDocumentTranslationConfig,
     void Function(DocumentTranslationProgress progress)? onProgress,
     bool Function()? isCancelled,
+    String Function(String chunk)? prepareSource,
   }) async {
     final chunks = chunkText(sourceText);
     if (chunks.isEmpty) {
@@ -218,7 +213,8 @@ class DocumentTranslationService {
         );
       }
 
-      final piece = await marian.translate(chunks[i], config: config);
+      final source = prepareSource?.call(chunks[i]) ?? chunks[i];
+      final piece = await marian.translate(source, config: config);
       translated.add(piece.trim());
       onProgress?.call(
         DocumentTranslationProgress(

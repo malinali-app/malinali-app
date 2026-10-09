@@ -45,11 +45,15 @@ abstract class WaveformTranscriber {
   Future<String> getFinalResultJson();
 }
 
-/// Offline audio file → text: FFmpeg decode then Vosk (or injectable STT).
+/// Decodes a WAV and returns the transcript, skipping chunked Vosk.
+typedef WholeFileTranscriber = Future<String> Function(File wavFile);
+
+/// Offline audio file → text: FFmpeg decode then Vosk or Whisper.
 class AudioTranscriptionService {
   AudioTranscriptionService({
     AudioDecodeService? decodeService,
-    required WaveformTranscriber transcriber,
+    WaveformTranscriber? transcriber,
+    this.wholeFileTranscriber,
     this.chunkBytes = defaultChunkBytes,
   })  : _decode = decodeService ?? AudioDecodeService(),
         _transcriber = transcriber;
@@ -58,7 +62,8 @@ class AudioTranscriptionService {
   static const int defaultChunkBytes = 8000;
 
   final AudioDecodeService _decode;
-  final WaveformTranscriber _transcriber;
+  final WaveformTranscriber? _transcriber;
+  final WholeFileTranscriber? wholeFileTranscriber;
   final int chunkBytes;
 
   /// Transcribe [audioFile] (.opus / .ogg / .wav / …).
@@ -146,13 +151,27 @@ class AudioTranscriptionService {
       );
     }
 
+    final direct = wholeFileTranscriber;
+    if (direct != null) {
+      if (isCancelled?.call() == true) return '';
+      onProgress?.call(0.1, '');
+      final text = await direct(wavFile);
+      onProgress?.call(1, text);
+      return text;
+    }
+
+    final transcriber = _transcriber;
+    if (transcriber == null) {
+      throw AudioTranscriptionException('Aucun moteur de transcription');
+    }
+
     final dataEnd =
         (info.dataOffset + info.dataByteCount).clamp(0, bytes.length);
     final pcm = bytes.sublist(info.dataOffset, dataEnd);
     if (pcm.isEmpty) return '';
 
-    await _transcriber.ensureReady();
-    await _transcriber.reset();
+    await transcriber.ensureReady();
+    await transcriber.reset();
 
     final segments = <String>[];
     final total = pcm.length;
@@ -163,16 +182,16 @@ class AudioTranscriptionService {
 
       final end = (offset + chunkBytes).clamp(0, total);
       final chunk = Uint8List.fromList(pcm.sublist(offset, end));
-      final isFinal = await _transcriber.acceptWaveformBytes(chunk);
+      final isFinal = await transcriber.acceptWaveformBytes(chunk);
       if (isFinal) {
         final text = extractTextFromVoskJson(
-          await _transcriber.getResultJson(),
+          await transcriber.getResultJson(),
         );
         if (text.isNotEmpty) segments.add(text);
       }
 
       final partial = extractPartialFromVoskJson(
-        await _transcriber.getPartialResultJson(),
+        await transcriber.getPartialResultJson(),
       );
       final preview = [
         ...segments,
@@ -185,7 +204,7 @@ class AudioTranscriptionService {
 
     if (isCancelled?.call() != true) {
       final tail = extractTextFromVoskJson(
-        await _transcriber.getFinalResultJson(),
+        await transcriber.getFinalResultJson(),
       );
       if (tail.isNotEmpty) segments.add(tail);
     }

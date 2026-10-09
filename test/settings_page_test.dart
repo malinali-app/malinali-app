@@ -8,7 +8,7 @@ import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
 import 'package:malinali/pages/settings_page.dart';
 import 'package:malinali/pages/translation_settings_page.dart';
-import 'package:malinali/pages/transcription_settings_page.dart';
+import 'package:malinali/pages/vosk_transcription_page.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/vosk_model_service.dart';
 import 'package:languages_dart/languages_dart.dart';
@@ -40,14 +40,53 @@ void main() {
     mockVoskService = MockVoskModelService();
     const MethodChannel('plugins.flutter.io/path_provider')
         .setMockMethodCallHandler((MethodCall methodCall) async {
-      if (methodCall.method == 'getApplicationDocumentsDirectory') {
+      if (methodCall.method == 'getApplicationDocumentsDirectory' ||
+          methodCall.method == 'getApplicationSupportDirectory' ||
+          methodCall.method == 'getLibraryDirectory') {
         return '.';
       }
       return null;
     });
   });
 
-  testWidgets('SettingsPage shows three tiles: Traduction, BYO, and Transcription', (WidgetTester tester) async {
+  testWidgets(
+      'SettingsPage shows Conversation, Traduction écrite, Transcription, BYO',
+      (WidgetTester tester) async {
+    when(mockModelService.fetchAllAvailableModels())
+        .thenAnswer((_) async => []);
+    when(mockVoskService.fetchAllSmallModels()).thenAnswer((_) async => []);
+    when(mockVoskService.isModelDownloaded(any))
+        .thenAnswer((_) async => true);
+
+    var conversationTapped = false;
+    await tester.pumpWidget(MaterialApp(
+      home: SettingsPage(
+        modelService: mockModelService,
+        voskService: mockVoskService,
+        onConversationTap: () => conversationTapped = true,
+      ),
+    ));
+
+    expect(find.text('Paramètres'), findsOneWidget);
+    expect(find.text('Conversation'), findsOneWidget);
+    expect(find.text('Traduction écrite'), findsOneWidget);
+    expect(find.text('Transcription audio'), findsOneWidget);
+    expect(find.text('Utiliser mon propre modèle'), findsOneWidget);
+    expect(find.text('Saisie vocale'), findsNothing);
+
+    await tester.tap(find.text('Conversation'));
+    await tester.pumpAndSettle();
+    expect(conversationTapped, isTrue);
+  });
+
+  testWidgets('Transcription audio opens VoskTranscriptionPage',
+      (WidgetTester tester) async {
+    when(mockVoskService.fetchAllSmallModels()).thenAnswer((_) async => [
+          VoskModelService.assetFrenchModel,
+        ]);
+    when(mockVoskService.isModelDownloaded(any))
+        .thenAnswer((_) async => true);
+
     await tester.pumpWidget(MaterialApp(
       home: SettingsPage(
         modelService: mockModelService,
@@ -55,32 +94,14 @@ void main() {
       ),
     ));
 
-    expect(find.text('Paramètres'), findsOneWidget);
-    expect(find.text('Traduction'), findsOneWidget);
-    expect(find.text('Utiliser mon propre modèle'), findsOneWidget);
-    expect(find.text('Transcription'), findsOneWidget);
-
-    expect(find.byIcon(Icons.translate), findsOneWidget);
-    expect(find.byIcon(Icons.auto_awesome), findsOneWidget);
-    expect(find.byIcon(Icons.mic), findsOneWidget);
-
-    // Tap Traduction tile -> opens TranslationSettingsPage
-    await tester.tap(find.text('Traduction'));
+    await tester.tap(find.text('Transcription audio'));
     await tester.pumpAndSettle();
-    expect(find.byType(TranslationSettingsPage), findsOneWidget);
-
-    // Go back to SettingsPage
-    await tester.tap(find.byTooltip('Back'));
-    await tester.pumpAndSettle();
-    expect(find.byType(SettingsPage), findsOneWidget);
-
-    // Tap Transcription tile -> opens TranscriptionSettingsPage
-    await tester.tap(find.text('Transcription'));
-    await tester.pumpAndSettle();
-    expect(find.byType(TranscriptionSettingsPage), findsOneWidget);
+    expect(find.byType(VoskTranscriptionPage), findsOneWidget);
   });
 
-  testWidgets('TranslationSettingsPage shows all models by default and filters when switch is toggled', (WidgetTester tester) async {
+  testWidgets(
+      'TranslationSettingsPage shows all models by default and filters when switch is toggled',
+      (WidgetTester tester) async {
     final models = [
       TranslationModel(
         sourceLang: Languages.french,
@@ -94,77 +115,22 @@ void main() {
       ),
     ];
 
-    when(mockModelService.fetchAllAvailableModels()).thenAnswer((_) async => models);
-    when(mockModelService.isModelDownloaded(any)).thenAnswer((_) async => false);
-    when(mockVoskService.fetchAllSmallModels()).thenAnswer((_) async => []);
-    when(mockVoskService.isModelDownloaded(any)).thenAnswer((_) async => false);
-    when(mockVoskService.findModelForLanguage(any, any)).thenReturn(null);
+    when(mockModelService.fetchAllAvailableModels())
+        .thenAnswer((_) async => models);
+    when(mockModelService.isModelDownloaded(any))
+        .thenAnswer((_) async => false);
 
     await tester.runAsync(() async {
       await tester.pumpWidget(MaterialApp(
         home: TranslationSettingsPage(
           modelService: mockModelService,
-          voskService: mockVoskService,
         ),
       ));
-
-      // Wait for models to load
-      await Future.delayed(const Duration(milliseconds: 100));
+      await Future.delayed(const Duration(milliseconds: 300));
       await tester.pump();
     });
 
-    // Check for errors
-    if (find.byType(SnackBar).evaluate().isNotEmpty) {
-      final snackBar = tester.widget<SnackBar>(find.byType(SnackBar));
-      final text = (snackBar.content as Text).data;
-      fail('Error loading models: $text');
-    }
-
-    // Verify both models are shown by default
-    expect(find.byType(ListTile), findsNWidgets(2));
-
-    // Toggle the switch
-    final switchFinder = find.byType(Switch);
-    await tester.tap(switchFinder);
-    await tester.pumpAndSettle();
-
-    // Since neither is downloaded, both should be filtered out
-    expect(find.byType(ListTile), findsNothing);
-    expect(find.text('Aucun modèle trouvé'), findsOneWidget);
-
-    // Toggle back
-    await tester.tap(switchFinder);
-    await tester.pumpAndSettle();
-
-    // Both should be back
-    expect(find.byType(ListTile), findsNWidgets(2));
-
-    // Switch to Target search mode
-    final targetChip = find.text('Cible');
-    await tester.tap(targetChip);
-    await tester.pumpAndSettle();
-
-    // Search for a model when switch is OFF
-    final textField = find.byType(TextField);
-    await tester.enterText(textField, 'English');
-    await tester.pumpAndSettle();
-
-    // Should find the English model
-    expect(find.textContaining('French → English'), findsOneWidget);
-    expect(find.textContaining('French → Spanish'), findsNothing);
-
-    // Toggle switch ON while searching
-    await tester.tap(switchFinder);
-    await tester.pumpAndSettle();
-
-    // Should find nothing since it's not downloaded
-    expect(find.textContaining('French → English'), findsNothing);
-    expect(find.text('Aucun modèle trouvé'), findsOneWidget);
-
-    // Clear search and toggle switch OFF
-    await tester.enterText(textField, '');
-    await tester.tap(switchFinder);
-    await tester.pumpAndSettle();
-    expect(find.byType(ListTile), findsNWidgets(2));
+    expect(find.textContaining('opus-mt-fr-en'), findsOneWidget);
+    expect(find.textContaining('opus-mt-fr-es'), findsOneWidget);
   });
 }

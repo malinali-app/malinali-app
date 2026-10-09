@@ -2,7 +2,7 @@ name: malinali
 description: "French ↔ Pulaar translator (on-device MarianMT)."
 publish_to: 'none'
 
-version: 1.1.6+116
+version: 1.1.7+117
 
 environment:
   sdk: ^3.7.2
@@ -14,6 +14,9 @@ dependencies:
   path_provider: ^2.1.1
   args: ^2.7.0
   aptabase_flutter: ^0.5.0
+
+#  device_info_plus: ^13.2.0 #^11.1.1 # constrained by aptabase_flutter 0.5.0
+  package_info_plus: ^10.2.1 #^8.3.1 #^8.1.1  
 
 
   marian_flutter:
@@ -32,7 +35,11 @@ dependencies:
       path: permission_handler
   share_plus: ^13.3.0
   url_launcher: ^6.3.1
+  flutter_tts: ^4.2.2
   record: ^7.1.1
+  just_audio: ^0.9.40
+  just_audio_windows_plus: ^0.5.3
+  lottie: ^3.1.0
   path: ^1.9.0
   archive: ^3.6.1
   filebridge:
@@ -40,6 +47,14 @@ dependencies:
   # Leanest maintained Flutter package that includes Opus (WhatsApp voice notes).
   # There is no pub package named "ffmpeg-kit-free"; `_audio` is the Opus-capable tier.
   ffmpeg_kit_flutter_new_audio: ^2.5.2
+  # whisper.cpp. Its ffmpeg_kit_flutter_new_min dependency is overridden below:
+  # that kit uses the same Android namespace as ffmpeg_kit_flutter_new_audio.
+  whisper_ggml: ^2.7.1
+  ffi: ^2.2.0
+
+dependency_overrides:
+  ffmpeg_kit_flutter_new_min:
+    path: packages/ffmpeg_kit_flutter_new_min
 
 dev_dependencies:
   flutter_test:
@@ -57,6 +72,8 @@ flutter:
   assets:
     - assets/malinali_logo.jpg
     - assets/vosk-model-small-fr-0.22.zip
+    - assets/dustbin_grey.json
+    - assets/fr-pul/
 
   fonts:
     - family: NotoSans

@@ -142,6 +142,7 @@ class _DocumentTranslationPageState extends State<DocumentTranslationPage> {
       final result = await _service.translateDocument(
         sourceText: sourceText,
         marian: widget.marian,
+        prepareSource: widget.model.prepareSourceText,
         onProgress: (progress) {
           if (!mounted) return;
           setState(() {

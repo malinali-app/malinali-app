@@ -24,6 +24,8 @@ class TranslationModel {
   final String? downloadSizeHint;
   /// Optional OPUS card score shown discreetly in the model list (e.g. `BLEU 34.1`).
   final String? qualityHint;
+  /// Prepended to source text before Marian encode (e.g. `>>wol<< ` for en-mul).
+  final String? sourcePrefix;
 
   TranslationModel({
     required this.sourceLang,
@@ -35,7 +37,16 @@ class TranslationModel {
     this.isCustom = false,
     this.downloadSizeHint,
     this.qualityHint,
+    this.sourcePrefix,
   });
+
+  /// OPUS multilingual packs need a target-language token; bilaterals do not.
+  String prepareSourceText(String text) {
+    final prefix = sourcePrefix;
+    if (prefix == null || prefix.isEmpty) return text;
+    if (text.startsWith(prefix)) return text;
+    return '$prefix$text';
+  }
 
   String get _sourceName => sourceLang.name.isEmpty ? sourceLang.nameEn : sourceLang.name;
   String get _targetName => targetLang.name.isEmpty ? targetLang.nameEn : targetLang.name;
@@ -60,6 +71,7 @@ class TranslationModel {
         'isCustom': true,
         'downloadSizeHint': downloadSizeHint,
         'qualityHint': qualityHint,
+        'sourcePrefix': sourcePrefix,
       };
 
   /// Full snapshot for last-selected-model persistence (boot / resume).
@@ -75,6 +87,7 @@ class TranslationModel {
         'isAsset': isAsset,
         'downloadSizeHint': downloadSizeHint,
         'qualityHint': qualityHint,
+        'sourcePrefix': sourcePrefix,
       };
 
   static TranslationModel? fromJson(Map<String, dynamic> json) {
@@ -134,7 +147,16 @@ class TranslationModel {
       isCustom: forceCustom || json['isCustom'] == true,
       downloadSizeHint: json['downloadSizeHint'] as String?,
       qualityHint: json['qualityHint'] as String?,
+      sourcePrefix: json['sourcePrefix'] as String? ??
+          _catalogueSourcePrefixFor(modelId),
     );
+  }
+
+  static String? _catalogueSourcePrefixFor(String modelId) {
+    for (final known in TranslationModelService.candleFineTunes) {
+      if (known.modelId == modelId) return known.sourcePrefix;
+    }
+    return null;
   }
 }
 
@@ -165,10 +187,58 @@ class TranslationModelService {
     ),
   ];
 
+  /// Helsinki opus-mt-en-mul target token (ISO 639-3). LocaleNLP/eng_wolof needs it.
+  static const kEngWolofSourcePrefix = '>>wol<< ';
+
+  /// Public Candle packs that are fine-tunes, not raw Helsinki OPUS cards.
+  /// French → Wolof keeps the opus-mt-fr-en SentencePiece vocab (no resize).
+  /// English → Wolof is a dedicated en-mul fine-tune; always prefix `>>wol<< `.
+  /// Wolof → English is a dedicated mul-en fine-tune; plain Wolof, no prefix.
+  static final List<TranslationModel> candleFineTunes = [
+    TranslationModel(
+      sourceLang: Languages.french,
+      targetLang: Language(
+        Languages.wolof.localeIntl,
+        'Wolof',
+        'Wolof',
+      ),
+      modelId: 'malinali-app/traduction-fr-wolof',
+      downloadSizeHint: '~285 Mo',
+      // Best trainer eval_bleu is 9.32 (epoch 18); shown like the OPUS tiles.
+      qualityHint: formatOpusBleuHint('BLEU 9.3'),
+    ),
+    TranslationModel(
+      sourceLang: Languages.english,
+      targetLang: Language(
+        Languages.wolof.localeIntl,
+        'Wolof',
+        'Wolof',
+      ),
+      modelId: 'malinali-app/traduction-en-wolof',
+      downloadSizeHint: '~310 Mo',
+      // Upstream self-reported BLEU 76.12 on their custom 84k set.
+      qualityHint: formatOpusBleuHint('BLEU 76.1'),
+      sourcePrefix: kEngWolofSourcePrefix,
+    ),
+    TranslationModel(
+      sourceLang: Language(
+        Languages.wolof.localeIntl,
+        'Wolof',
+        'Wolof',
+      ),
+      targetLang: Languages.english,
+      modelId: 'malinali-app/traduction-wolof-en',
+      downloadSizeHint: '~310 Mo',
+      // Upstream sacreBLEU 68.51 on their custom 84k set.
+      qualityHint: formatOpusBleuHint('BLEU 68.5'),
+    ),
+  ];
+
   /// Fetch discoverable models (Xenova + curated African Helsinki bilaterals).
   Future<List<TranslationModel>> fetchAllAvailableModels() async {
     final List<TranslationModel> models = [];
     models.addAll(privateModels);
+    models.addAll(candleFineTunes);
     models.addAll(_curatedAfricanHelsinkiModels());
     models.addAll(await loadCustomModels());
 
@@ -534,6 +604,7 @@ class TranslationModelService {
                 sourceLang: actualSourceLang,
                 targetLang: targetLang,
                 modelId: id,
+                qualityHint: id.toLowerCase().contains('opus-mt') ? 'OPUS' : null,
               ),
             );
           }
@@ -553,6 +624,7 @@ class TranslationModelService {
                 sourceLang: actualSourceLang,
                 targetLang: targetLang,
                 modelId: id,
+                qualityHint: id.toLowerCase().contains('opus-mt') ? 'OPUS' : null,
               ),
             );
           }

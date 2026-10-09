@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:languages_dart/languages_dart.dart';
+import 'package:malinali/services/african_helsinki_models.dart';
 import 'package:malinali/theme/malinali_chrome.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Badge hints for a language row (offline MT / speech).
 class LanguagePickerBadges {
@@ -9,12 +11,18 @@ class LanguagePickerBadges {
     this.translationAvailable = false,
     this.voskReady = false,
     this.voskAvailable = false,
+    this.qualityHint,
+    this.modelId,
   });
 
   final bool translationReady;
   final bool translationAvailable;
   final bool voskReady;
   final bool voskAvailable;
+  /// Catalogue score such as `BLEU 9.3 / 100`.
+  final String? qualityHint;
+  /// Hugging Face repo id (`org/name`) for the info button.
+  final String? modelId;
 }
 
 String languageDisplayName(Language language) {
@@ -245,20 +253,59 @@ class _LanguagePickerSheetState extends State<LanguagePickerSheet> {
                             color: MalinaliChrome.onBlue,
                           ),
                         ),
-                        subtitle: Text(
-                          [
-                            if (english.isNotEmpty && english != native) english,
-                            iso,
-                          ].join(' · '),
-                          style: const TextStyle(
-                            fontFamily: 'NotoSans',
-                            color: MalinaliChrome.mutedOnBlue,
-                            fontSize: 13,
-                          ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              [
+                                if (english.isNotEmpty && english != native)
+                                  english,
+                                iso,
+                              ].join(' · '),
+                              style: const TextStyle(
+                                fontFamily: 'NotoSans',
+                                color: MalinaliChrome.mutedOnBlue,
+                                fontSize: 13,
+                              ),
+                            ),
+                            if (badges.qualityHint != null &&
+                                badges.qualityHint!.isNotEmpty)
+                              GestureDetector(
+                                onTap: () => _launchUrl(kBleuPaperUrl),
+                                child: Text(
+                                  badges.qualityHint!,
+                                  style: const TextStyle(
+                                    fontFamily: 'NotoSans',
+                                    color: MalinaliChrome.blueChip,
+                                    fontSize: 13,
+                                    decoration: TextDecoration.underline,
+                                    decorationColor: MalinaliChrome.blueChip,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
+                        isThreeLine: badges.qualityHint != null &&
+                            badges.qualityHint!.isNotEmpty,
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            if (badges.modelId != null &&
+                                badges.modelId!.isNotEmpty)
+                              IconButton(
+                                icon: const Icon(Icons.info_outline, size: 18),
+                                color: MalinaliChrome.onBlue,
+                                tooltip: 'Plus d\'infos',
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 32,
+                                  minHeight: 32,
+                                ),
+                                onPressed: () => _launchUrl(
+                                  'https://huggingface.co/${badges.modelId}',
+                                ),
+                              ),
                             if (badges.translationReady ||
                                 badges.translationAvailable)
                               _BadgeIcon(
@@ -297,6 +344,17 @@ class _LanguagePickerSheetState extends State<LanguagePickerSheet> {
         ],
       ),
     );
+  }
+}
+
+Future<void> _launchUrl(String raw) async {
+  final url = Uri.parse(raw);
+  try {
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
+  } catch (e) {
+    debugPrint('Error launching $raw: $e');
   }
 }
 
