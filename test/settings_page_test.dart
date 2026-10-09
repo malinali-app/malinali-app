@@ -68,13 +68,13 @@ void main() {
     ));
 
     expect(find.text('Paramètres'), findsOneWidget);
-    expect(find.text('Conversation'), findsOneWidget);
+    expect(find.text('Traduction vocale'), findsOneWidget);
     expect(find.text('Traduction écrite'), findsOneWidget);
     expect(find.text('Transcription audio'), findsOneWidget);
     expect(find.text('Utiliser mon propre modèle'), findsOneWidget);
     expect(find.text('Saisie vocale'), findsNothing);
 
-    await tester.tap(find.text('Conversation'));
+    await tester.tap(find.text('Traduction vocale'));
     await tester.pumpAndSettle();
     expect(conversationTapped, isTrue);
   });

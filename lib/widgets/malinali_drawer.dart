@@ -144,7 +144,7 @@ class MalinaliDrawer extends StatelessWidget {
                     _DrawerItem(
                       icon: Icons.chat_bubble_rounded,
                       title: 'Traduction vocale',
-                      subtitle: 'Conversation bilingue',
+                      subtitle: 'Chat vocal',
                       color: MalinaliChrome.yellowBorder,
                       isSelected: currentPath == '/',
                       onTap: () {
@@ -159,7 +159,7 @@ class MalinaliDrawer extends StatelessWidget {
                     _DrawerItem(
                       icon: Icons.translate_rounded,
                       title: 'Traduction écrite',
-                      subtitle: 'Texte et documents',
+                      subtitle: 'Texte et fichiers textes',
                       color: MalinaliChrome.blueAction,
                       isSelected: currentPath == '/translate',
                       onTap: () => _openWritten(context),
@@ -167,7 +167,7 @@ class MalinaliDrawer extends StatelessWidget {
                     _DrawerItem(
                       icon: Icons.audio_file_rounded,
                       title: 'Transcription audio',
-                      subtitle: 'Note vocale et fichiers',
+                      subtitle: 'Note vocale WhatsApp et fichiers',
                       color: MalinaliChrome.blueChip,
                       isSelected: currentPath == '/transcription',
                       onTap: () => _openTranscription(context),

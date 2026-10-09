@@ -234,7 +234,7 @@ class _VoiceChatPageState extends State<VoiceChatPage> {
 
   String get _pairLabel {
     final prefs = _prefs;
-    if (prefs == null) return 'Conversation';
+    if (prefs == null) return 'Traduction vocale';
     final srcLang = voiceLanguageByIso(prefs.sourceIso);
     final tgtLang = voiceLanguageByIso(prefs.targetIso);
     final src = srcLang == null
@@ -259,76 +259,75 @@ class _VoiceChatPageState extends State<VoiceChatPage> {
         ),
       ),
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            if (_status != null || _error != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (_status != null)
-                      Text(
-                        _status!,
-                        style: const TextStyle(color: MalinaliChrome.mutedOnBlue),
-                      ),
-                    if (_downloading) ...[
-                      const SizedBox(height: 8),
-                      const LinearProgressIndicator(),
-                    ],
-                    if (_error != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        _error!,
-                        style: TextStyle(color: Theme.of(context).colorScheme.error),
-                      ),
-                      TextButton(
-                        onPressed: _ensureDownloads,
-                        child: const Text('Réessayer'),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            Expanded(
-            child: _turns.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: (!_ready || _busy)
-                          ? const CircularProgressIndicator()
-                          : Text(
-                              'Maintenez le micro pour parler.',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(color: MalinaliChrome.mutedOnBlue),
-                            ),
+            Column(
+              children: [
+                if (_status != null || _error != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_status != null)
+                          Text(
+                            _status!,
+                            style: const TextStyle(color: MalinaliChrome.mutedOnBlue),
+                          ),
+                        if (_downloading) ...[
+                          const SizedBox(height: 8),
+                          const LinearProgressIndicator(),
+                        ],
+                        if (_error != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            _error!,
+                            style: TextStyle(color: Theme.of(context).colorScheme.error),
+                          ),
+                          TextButton(
+                            onPressed: _ensureDownloads,
+                            child: const Text('Réessayer'),
+                          ),
+                        ],
+                      ],
                     ),
-                  )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(12),
-                      itemCount: _turns.length,
-                      itemBuilder: (context, index) {
-                        return _VoiceTurnBubbles(
-                          turn: _turns[index],
-                          sourceIso: _prefs?.sourceIso ?? 'wo',
-                          targetIso: _prefs?.targetIso ?? 'fr',
-                          tts: _tts,
-                          ttsAvailable: _ttsAvailable,
-                        );
-                      },
-                    ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 24, 32),
-              child: SizedBox(
-                height: 220,
-                child: Align(
-                  alignment: Alignment.bottomRight,
-                  child: VoiceRecordButton(
-                    enabled: _ready && !_busy && !_downloading,
-                    onRecordingComplete: _onRecordingComplete,
                   ),
+                Expanded(
+                  child: _turns.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: (!_ready || _busy)
+                                ? const CircularProgressIndicator()
+                                : Text(
+                                    'Maintenez le micro pour parler.',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(color: MalinaliChrome.mutedOnBlue),
+                                  ),
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
+                          itemCount: _turns.length,
+                          itemBuilder: (context, index) {
+                            return _VoiceTurnBubbles(
+                              turn: _turns[index],
+                              sourceIso: _prefs?.sourceIso ?? 'wo',
+                              targetIso: _prefs?.targetIso ?? 'fr',
+                              tts: _tts,
+                              ttsAvailable: _ttsAvailable,
+                            );
+                          },
+                        ),
                 ),
+              ],
+            ),
+            Positioned(
+              bottom: 24,
+              right: 24,
+              child: VoiceRecordButton(
+                enabled: _ready && !_busy && !_downloading,
+                onRecordingComplete: _onRecordingComplete,
               ),
             ),
           ],
