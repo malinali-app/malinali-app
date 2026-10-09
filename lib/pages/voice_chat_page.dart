@@ -1,11 +1,14 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:malinali/pages/voice_setup_page.dart';
 import 'package:malinali/pages/vosk_transcription_page.dart';
+import 'package:malinali/utils/wakelock_helper.dart';
+import 'package:malinali/widgets/connectivity_builder.dart';
 import 'package:malinali/widgets/language_pill.dart';
 import 'package:malinali/widgets/malinali_drawer.dart';
 import 'package:malinali/services/malinali_audio_open_intent.dart';
@@ -62,6 +65,7 @@ class _VoiceChatPageState extends State<VoiceChatPage> {
   bool _ready = false;
   bool _busy = false;
   bool _downloading = false;
+  double? _downloadProgress;
   bool _ttsAvailable = false;
   StreamSubscription<String>? _audioShareSub;
 
@@ -149,31 +153,51 @@ class _VoiceChatPageState extends State<VoiceChatPage> {
     setState(() {
       _downloading = true;
       _error = null;
+      _downloadProgress = null;
       _status = 'Préparation des modèles…';
       _ready = false;
     });
+    await WakelockHelper.enable();
     try {
       final already = await _pipeline.modelsReady(plan);
       if (!already) {
+        // Model is not available locally. Check connectivity before attempting fetch.
+        final online = await isConnected;
+        if (!online) {
+          if (!mounted) return;
+          setState(() {
+            _downloading = false;
+            _ready = false;
+            _error = 'Pas de connexion Internet. Impossible de télécharger le modèle.';
+            _status = 'Hors ligne';
+          });
+          return;
+        }
+
         await _pipeline.ensureModels(
           plan,
           onStatus: (s) {
             if (mounted) setState(() => _status = s);
           },
+          onProgress: (p) {
+            if (mounted) setState(() => _downloadProgress = p);
+          },
         );
       }
-      // Preload English→target into runtime when present.
-      final toTarget = plan.englishToTarget;
-      if (toTarget != null) {
-        setState(() => _status = 'Chargement ${toTarget.displayName}…');
-        final dir = await _modelService.downloadModel(toTarget);
+      // Preload only the first Marian hop. For Wolof→French that is wo→en;
+      // preloading en→fr left Candle + Whisper + wo→en in RAM and hung phones.
+      final preload = VoiceTurnPipeline.firstMarianHop(plan);
+      if (preload != null) {
+        setState(() => _status = 'Chargement ${preload.displayName}…');
+        final dir = await _modelService.downloadModel(preload);
         final marian = await MarianService.loadFromDirectory(dir.path);
-        MarianRuntime.instance.attach(marian, toTarget);
+        MarianRuntime.instance.attach(marian, preload);
       }
       if (!mounted) return;
       setState(() {
         _ready = true;
         _downloading = false;
+        _downloadProgress = null;
         _status = null;
       });
     } catch (e) {
@@ -181,9 +205,12 @@ class _VoiceChatPageState extends State<VoiceChatPage> {
       setState(() {
         _downloading = false;
         _ready = false;
+        _downloadProgress = null;
         _error = e.toString();
         _status = 'Erreur de téléchargement';
       });
+    } finally {
+      await WakelockHelper.disable();
     }
   }
 
@@ -195,17 +222,48 @@ class _VoiceChatPageState extends State<VoiceChatPage> {
       _error = null;
       _status = 'Transcription…';
     });
+    var insertedPartial = false;
     try {
-      final turn = await _pipeline.run(wavPath: path, plan: plan);
+      final turn = await _pipeline.run(
+        wavPath: path,
+        plan: plan,
+        onStatus: (s) {
+          if (mounted) setState(() => _status = s);
+        },
+        onTranscriptReady: (partial) {
+          if (!mounted) return;
+          setState(() {
+            if (!insertedPartial) {
+              _turns.add(partial);
+              insertedPartial = true;
+            } else {
+              _turns[_turns.length - 1] = partial;
+            }
+            // Keep a short status; the target bubble shows "Traduction…".
+            if (partial.isTranslating) {
+              _status = 'Traduction…';
+            }
+          });
+        },
+      );
       if (!mounted) return;
       setState(() {
-        _turns.add(turn);
+        if (insertedPartial) {
+          _turns[_turns.length - 1] = turn;
+        } else {
+          _turns.add(turn);
+        }
         _busy = false;
-        _status = null;
+        _status = turn.timings != null && kDebugMode
+            ? turn.timings!.summaryLine
+            : null;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        if (insertedPartial && _turns.isNotEmpty) {
+          _turns.removeLast();
+        }
         _busy = false;
         _error = e.toString();
         _status = null;
@@ -276,7 +334,20 @@ class _VoiceChatPageState extends State<VoiceChatPage> {
                           ),
                         if (_downloading) ...[
                           const SizedBox(height: 8),
-                          const LinearProgressIndicator(),
+                          LinearProgressIndicator(value: _downloadProgress),
+                          if (_downloadProgress != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              '${(_downloadProgress! * 100).toStringAsFixed(0)} %',
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                fontFamily: 'NotoSans',
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: MalinaliChrome.yellowBorder,
+                              ),
+                            ),
+                          ],
                         ],
                         if (_error != null) ...[
                           const SizedBox(height: 8),
@@ -297,7 +368,7 @@ class _VoiceChatPageState extends State<VoiceChatPage> {
                       ? Center(
                           child: Padding(
                             padding: const EdgeInsets.all(24),
-                            child: (!_ready || _busy)
+                            child: (!_ready || (_busy && _status == 'Transcription…'))
                                 ? const CircularProgressIndicator()
                                 : Text(
                                     'Maintenez le micro pour parler.',
@@ -480,7 +551,7 @@ class _VoiceTurnBubbles extends StatelessWidget {
           ),
         ),
         GestureDetector(
-          onLongPress: _showTargetText
+          onLongPress: _showTargetText && !turn.isTranslating
               ? () => _showMenu(context, turn.targetText)
               : null,
           child: Align(
@@ -502,25 +573,69 @@ class _VoiceTurnBubbles extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      _showTargetText
-                          ? turn.targetText
-                          : 'Le texte wolof n’est pas affiché pour l’instant.',
-                      style: TextStyle(
-                        color: _showTargetText
-                            ? MalinaliChrome.targetText
-                            : MalinaliChrome.mutedOnBlue,
-                        fontSize: 16,
-                        fontStyle: _showTargetText
-                            ? FontStyle.normal
-                            : FontStyle.italic,
+                    if (turn.isTranslating) ...[
+                      const Text(
+                        'Traduction…',
+                        style: TextStyle(
+                          color: MalinaliChrome.mutedOnBlue,
+                          fontSize: 16,
+                          fontStyle: FontStyle.italic,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        if (ttsAvailable && isWellSupported)
+                      const SizedBox(height: 10),
+                      const LinearProgressIndicator(minHeight: 2),
+                    ] else
+                      Text(
+                        _showTargetText
+                            ? turn.targetText
+                            : 'Le texte wolof n’est pas affiché pour l’instant.',
+                        style: TextStyle(
+                          color: _showTargetText
+                              ? MalinaliChrome.targetText
+                              : MalinaliChrome.mutedOnBlue,
+                          fontSize: 16,
+                          fontStyle: _showTargetText
+                              ? FontStyle.normal
+                              : FontStyle.italic,
+                        ),
+                      ),
+                    if (!turn.isTranslating) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          if (ttsAvailable && isWellSupported)
+                            IconButton(
+                              constraints: const BoxConstraints(),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              icon: const Icon(
+                                Icons.volume_up_rounded,
+                                color: MalinaliChrome.yellowBorder,
+                                size: 20,
+                              ),
+                              onPressed:
+                                  targetLang == null
+                                      ? null
+                                      : () async {
+                                        final ok = await tts.speak(
+                                          turn.targetText,
+                                          targetLang,
+                                        );
+                                        if (!ok && context.mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Synthèse vocale indisponible pour cette langue.',
+                                                  ),
+                                                ),
+                                              );
+                                        }
+                                      },
+                            ),
                           IconButton(
                             constraints: const BoxConstraints(),
                             padding: const EdgeInsets.symmetric(
@@ -528,60 +643,30 @@ class _VoiceTurnBubbles extends StatelessWidget {
                               vertical: 4,
                             ),
                             icon: const Icon(
-                              Icons.volume_up_rounded,
+                              Icons.copy_rounded,
                               color: MalinaliChrome.yellowBorder,
                               size: 20,
                             ),
-                            onPressed:
-                                targetLang == null
-                                    ? null
-                                    : () async {
-                                      final ok = await tts.speak(
-                                        turn.targetText,
-                                        targetLang,
-                                      );
-                                      if (!ok && context.mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                  'Synthèse vocale indisponible pour cette langue.',
-                                                ),
-                                              ),
-                                            );
-                                      }
-                                    },
+                            onPressed: () => _copy(context, turn.targetText),
+                            tooltip: 'Copier',
                           ),
-                        IconButton(
-                          constraints: const BoxConstraints(),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
+                          IconButton(
+                            constraints: const BoxConstraints(),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            icon: const Icon(
+                              Icons.share_rounded,
+                              color: MalinaliChrome.yellowBorder,
+                              size: 20,
+                            ),
+                            onPressed: () => _share(turn.targetText),
+                            tooltip: 'Partager',
                           ),
-                          icon: const Icon(
-                            Icons.copy_rounded,
-                            color: MalinaliChrome.yellowBorder,
-                            size: 20,
-                          ),
-                          onPressed: () => _copy(context, turn.targetText),
-                          tooltip: 'Copier',
-                        ),
-                        IconButton(
-                          constraints: const BoxConstraints(),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          icon: const Icon(
-                            Icons.share_rounded,
-                            color: MalinaliChrome.yellowBorder,
-                            size: 20,
-                          ),
-                          onPressed: () => _share(turn.targetText),
-                          tooltip: 'Partager',
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),

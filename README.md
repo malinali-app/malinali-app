@@ -7,15 +7,52 @@ Offline voice and text translation for African / low-resource languages
 
 The app opens on a WhatsApp-style **conversation** screen.
 
-1. First launch: pick spoken language (Wolof / Swahili / Yoruba), target language (English→X Marian, French pinned), and speech model size (**250 Mo** recommended, or 75 Mo).
+1. **First launch**: pick source language (**English**, **Français**, or **Wolof**), pick target language, and download the on-device model (with network check and wakelock during download).
 2. Hold the mic to record (slide left to cancel, slide up to lock). Cap 30 seconds.
-3. Speech reaches English by the best chain available for that language, then Marian translates English→target. Android TTS plays the result on tap.
+3. Speech is transcribed by Whisper, the Whisper model is released from RAM, and MarianMT translates to the target language. Android TTS plays the result on tap.
 
-Speech chain (first match wins, same ISO on both sides of a hop):
+### Voice translation pipeline & models
 
-1. Whisper fine-tune that emits English (none shipped yet; catalogue slot `emitsEnglish`).
-2. Whisper fine-tune that transcribes the source language **and** a Marian source→English pack (live today: Yoruba → `opus-mt-yo-en`; Wolof → [`malinali-app/traduction-wolof-en`](https://huggingface.co/malinali-app/traduction-wolof-en)).
-3. Generic multilingual Whisper (chosen size) with translate-to-English (Swahili lands here).
+All inference runs 100% on-device (Whisper STT unloads before MarianMT loads to prevent RAM exhaustion on phones).
+
+#### 1. Spoken languages (STT)
+- **Wolof (`wo`)**: [`malinali-app/whisper-small-wolof-ggml`](https://huggingface.co/malinali-app/whisper-small-wolof-ggml) (from `M9and2M/whisper-small-wolof`, Q8_0 ~252 Mo, prompted with `en` — Whisper has no `<|wo|>` token).
+- **Yoruba (`yo`)**: [`malinali-app/whisper-small-yoruba-ggml`](https://huggingface.co/malinali-app/whisper-small-yoruba-ggml) (from `LyngualLabs/whisper-small-yoruba`, Q8_0 ~250 Mo).
+- **French / English**: official OpenAI Whisper (`small` ~250 Mo or `tiny` ~75 Mo).
+
+#### 2. Translation paths (MarianMT)
+| Source | Target | Model / Strategy | BLEU / Quality |
+|--------|--------|------------------|----------------|
+| **Wolof (`wo`)** | **English (`en`)** | `malinali-app/traduction-wolof-en` (LocaleNLP fine-tune) | **BLEU 68.5** |
+| **Wolof (`wo`)** | **French (`fr`)** | **Cascade**: `wo → en` (`traduction-wolof-en`) then `en → fr` (`Xenova/opus-mt-en-fr`) | **BLEU ~28–35** (no direct `wo→fr` Marian model exists) |
+| **French (`fr`)** | **English (`en`)** | `Helsinki-NLP/opus-mt_tiny_fra-eng` or `Xenova/opus-mt-fr-en` | BLEU ~40+ |
+| **French (`fr`)** | **Wolof (`wo`)** | `malinali-app/traduction-fr-wolof` | BLEU 9.3 |
+| **French (`fr`)** | **African languages** | Helsinki bilaterals with **BLEU ≥ 30** (e.g. Lingála `opus-mt-fr-ln` BLEU 30.5) | BLEU ≥ 30 |
+| **English (`en`)** | **French (`fr`)** | `Xenova/opus-mt-en-fr` | BLEU ~43.0 |
+| **English (`en`)** | **Wolof (`wo`)** | `malinali-app/traduction-en-wolof` (prefix `>>wol<< `) | **BLEU 76.1** |
+| **English (`en`)** | **African languages** | Helsinki bilaterals with **BLEU ≥ 30** (Igbo 39.5, Twi 38.2, Ewe 38.2, Shona 38.0, Lingála 36.7, Hausa 34.1, Kinyarwanda 33.3, Nyanja 31.4, Ganda 30.4) | BLEU ≥ 30 |
+
+#### Testing / benchmarking Wolof → French BLEU score
+Because Helsinki-NLP never released an `opus-mt-wo-fr` pair, the app bridges Wolof through English to French.
+To compute sacreBLEU on test sets (e.g. FLEURS `google/fleurs` split `wo_sn`):
+
+```python
+import sacrebleu, torch
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+
+# 1. wo -> en
+tok_wo = AutoTokenizer.from_pretrained("malinali-app/traduction-wolof-en")
+mt_wo = AutoModelForSeq2SeqLM.from_pretrained("malinali-app/traduction-wolof-en")
+# 2. en -> fr
+tok_fr = AutoTokenizer.from_pretrained("Helsinki-NLP/opus-mt-en-fr")
+mt_fr = AutoModelForSeq2SeqLM.from_pretrained("Helsinki-NLP/opus-mt-en-fr")
+
+def wo_to_fr(sentences: list[str]) -> list[str]:
+    en = tok_wo.batch_decode(mt_wo.generate(**tok_wo(sentences, return_tensors="pt", padding=True)), skip_special_tokens=True)
+    return tok_fr.batch_decode(mt_fr.generate(**tok_fr(en, return_tensors="pt", padding=True)), skip_special_tokens=True)
+
+# bleuscore = sacrebleu.corpus_bleu(wo_to_fr(wolof_test_sentences), [french_references])
+```
 
 Advanced modes live under Paramètres (no bottom bar):
 

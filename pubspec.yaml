@@ -2,7 +2,7 @@ name: malinali
 description: "French ↔ Pulaar translator (on-device MarianMT)."
 publish_to: 'none'
 
-version: 1.1.7+117
+version: 1.1.8+118
 
 environment:
   sdk: ^3.7.2
@@ -17,6 +17,9 @@ dependencies:
 
 #  device_info_plus: ^13.2.0 #^11.1.1 # constrained by aptabase_flutter 0.5.0
   package_info_plus: ^10.2.1 #^8.3.1 #^8.1.1  
+  connectivity_plus: ^7.0.0
+  internet_connection_checker_plus: ^2.5.2
+  wakelock_plus: ^1.2.8
 
 
   marian_flutter:
@@ -71,9 +74,7 @@ flutter:
 
   assets:
     - assets/malinali_logo.jpg
-    - assets/vosk-model-small-fr-0.22.zip
     - assets/dustbin_grey.json
-    - assets/fr-pul/
 
   fonts:
     - family: NotoSans

@@ -679,7 +679,10 @@ class TranslationModelService {
   }
 
   /// Download model files if not already cached.
-  Future<Directory> downloadModel(TranslationModel model) async {
+  Future<Directory> downloadModel(
+    TranslationModel model, {
+    void Function(int received, int total)? onProgress,
+  }) async {
     if (model.isAsset) {
       throw ArgumentError('Cannot download an asset-based model.');
     }
@@ -700,12 +703,14 @@ class TranslationModelService {
           filename,
           requiresAuth: model.requiresAuth,
           authToken: model.authToken,
+          onProgress: filename == 'model.safetensors' ? onProgress : null,
         );
       } on DioException catch (e) {
         if (e.response?.statusCode == 404 && filename == 'model.safetensors') {
           final bool downloaded = await _downloadSafetensorsWithFallbacks(
             model,
             modelDir,
+            onProgress: onProgress,
           );
           if (!downloaded) {
             throw Exception(
@@ -787,8 +792,9 @@ class TranslationModelService {
   /// Helsinki / Xenova weights: try the repo itself, then SFconvertbot PR refs.
   Future<bool> _downloadSafetensorsWithFallbacks(
     TranslationModel model,
-    Directory modelDir,
-  ) async {
+    Directory modelDir, {
+    void Function(int received, int total)? onProgress,
+  }) async {
     final candidates = <String>[];
     if (model.modelId.startsWith('Xenova/')) {
       candidates.add('Helsinki-NLP/${model.modelId.split('/').last}');
@@ -807,7 +813,12 @@ class TranslationModelService {
 
     for (final repoId in candidates) {
       try {
-        await _downloadOneFile(repoId, modelDir, 'model.safetensors');
+        await _downloadOneFile(
+          repoId,
+          modelDir,
+          'model.safetensors',
+          onProgress: onProgress,
+        );
         return true;
       } catch (_) {}
       for (final pr in ['refs%2Fpr%2F1', 'refs%2Fpr%2F2', 'refs%2Fpr%2F3']) {
@@ -817,6 +828,7 @@ class TranslationModelService {
             modelDir,
             'model.safetensors',
             revision: pr,
+            onProgress: onProgress,
           );
           return true;
         } catch (_) {}
@@ -832,6 +844,7 @@ class TranslationModelService {
     String revision = 'main',
     bool requiresAuth = false,
     String? authToken,
+    void Function(int received, int total)? onProgress,
   }) async {
     final file = File(p.join(modelDir.path, filename));
     if (await file.exists() && await file.length() > 0) {
@@ -852,7 +865,12 @@ class TranslationModelService {
       headers: bearer != null ? {'Authorization': 'Bearer $bearer'} : null,
     );
     try {
-      await _dio.download(url, file.path, options: options);
+      await _dio.download(
+        url,
+        file.path,
+        options: options,
+        onReceiveProgress: onProgress,
+      );
       if (filename == 'tokenizer.json') {
         await _cleanTokenizer(file);
       }

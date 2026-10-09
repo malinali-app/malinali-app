@@ -108,12 +108,14 @@ Future<Map<String, dynamic>> whisperTranscribeWav({
   String language = 'auto',
   bool translate = true,
 }) {
+  // Phones thrash with 4 GGML threads under memory pressure; desktop keeps 4.
+  final threads = Platform.isAndroid || Platform.isIOS ? 2 : 4;
   final body = json.encode({
     '@type': 'getTextFromWavFile',
     'audio': wavPath,
     'model': modelPath,
     'is_translate': translate,
-    'threads': 4,
+    'threads': threads,
     'is_verbose': false,
     'language': language,
     'is_special_tokens': false,

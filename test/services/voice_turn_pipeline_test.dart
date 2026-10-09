@@ -15,6 +15,7 @@ class _FakeWhisper extends Fake implements WhisperSpeechService {
   WhisperModel generic = WhisperModel.small;
   String? language;
   bool? translate;
+  int released = 0;
 
   @override
   Future<void> setActivePack(WhisperSpecialistPack? p) async {
@@ -39,6 +40,11 @@ class _FakeWhisper extends Fake implements WhisperSpeechService {
   Future<bool> isSpecialistDownloaded(WhisperSpecialistPack pack) async => true;
 
   @override
+  Future<void> releaseParkedModel() async {
+    released++;
+  }
+
+  @override
   Future<String> transcribeWav(
     String audioPath, {
     void Function(int percent)? onProgress,
@@ -59,7 +65,10 @@ class _FakeModelService extends Fake implements TranslationModelService {
       downloaded[model.modelId] ?? true;
 
   @override
-  Future<Directory> downloadModel(TranslationModel model) async {
+  Future<Directory> downloadModel(
+    TranslationModel model, {
+    void Function(int received, int total)? onProgress,
+  }) async {
     downloaded[model.modelId] = true;
     return Directory.systemTemp;
   }
@@ -107,6 +116,7 @@ void main() {
   test('Wolof cascade runs wolof-small then wo→en then en→fr', () async {
     final whisper = _FakeWhisper()..transcript = 'Nanga def';
     final seen = <String, String>{};
+    final partials = <VoiceTurn>[];
     final plan = const VoiceSpeechResolver().resolve(VoicePreferences.defaults);
     final turn = await VoiceTurnPipeline(
       whisper: whisper,
@@ -121,7 +131,11 @@ void main() {
         }
         throw StateError('unexpected model ${model.modelId}');
       },
-    ).run(wavPath: 'nanga_def.wav', plan: plan);
+    ).run(
+      wavPath: 'nanga_def.wav',
+      plan: plan,
+      onTranscriptReady: partials.add,
+    );
 
     expect(plan.strategy, VoiceSpeechStrategy.transcribeThenMarianToEnglish);
     expect(plan.whisperLanguage, 'en');
@@ -129,10 +143,48 @@ void main() {
     expect(whisper.language, 'en');
     expect(whisper.translate, isFalse);
     expect(whisper.pack?.id, 'wolof-small');
+    expect(whisper.released, 1);
     expect(seen['malinali-app/traduction-wolof-en'], 'Nanga def');
     expect(seen['Xenova/opus-mt-en-fr'], 'How are you');
     expect(turn.sourceTranscript, 'Nanga def');
     expect(turn.englishText, 'How are you');
     expect(turn.targetText, 'Comment allez-vous');
+    expect(turn.isTranslating, isFalse);
+    expect(turn.timings, isNotNull);
+    expect(partials, isNotEmpty);
+    expect(partials.first.sourceTranscript, 'Nanga def');
+    expect(partials.first.isTranslating, isTrue);
+    expect(partials.first.targetText, isEmpty);
+  });
+
+  test('first Marian hop for Wolof cascade is wo→en not en→fr', () {
+    final plan = const VoiceSpeechResolver().resolve(VoicePreferences.defaults);
+    expect(
+      VoiceTurnPipeline.firstMarianHop(plan)?.modelId,
+      'malinali-app/traduction-wolof-en',
+    );
+  });
+
+  test('VoiceStageTimings bottleneck prefers the slower family', () {
+    const whisperHeavy = VoiceStageTimings(
+      whisperMs: 8000,
+      releaseMs: 50,
+      marianHops: [
+        MarianHopTiming(modelId: 'a', loadMs: 500, translateMs: 200),
+      ],
+      totalMs: 9000,
+    );
+    expect(whisperHeavy.bottleneck, 'whisper');
+    const marianHeavy = VoiceStageTimings(
+      whisperMs: 1000,
+      releaseMs: 50,
+      marianHops: [
+        MarianHopTiming(modelId: 'a', loadMs: 2000, translateMs: 500),
+        MarianHopTiming(modelId: 'b', loadMs: 1500, translateMs: 400),
+      ],
+      totalMs: 5500,
+    );
+    expect(marianHeavy.bottleneck, 'marian');
+    expect(marianHeavy.summaryLine, contains('bottleneck=marian'));
   });
 }

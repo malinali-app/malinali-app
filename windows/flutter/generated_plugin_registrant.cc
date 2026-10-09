@@ -6,6 +6,7 @@
 
 #include "generated_plugin_registrant.h"
 
+#include <connectivity_plus/connectivity_plus_windows_plugin.h>
 #include <ffmpeg_kit_flutter_new_audio/f_fmpeg_kit_flutter_plugin.h>
 #include <file_selector_windows/file_selector_windows.h>
 #include <flutter_tts/flutter_tts_plugin.h>
@@ -17,6 +18,8 @@
 #include <vosk_flutter/vosk_flutter_plugin.h>
 
 void RegisterPlugins(flutter::PluginRegistry* registry) {
+  ConnectivityPlusWindowsPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("ConnectivityPlusWindowsPlugin"));
   FFmpegKitFlutterPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FFmpegKitFlutterPlugin"));
   FileSelectorWindowsRegisterWithRegistrar(

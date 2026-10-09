@@ -238,6 +238,9 @@ class WhisperSpeechService {
     return specialistFilePath(specialist);
   }
 
+  /// Drop a model held by `keep_model_loaded` (frees RAM before Marian).
+  Future<void> releaseParkedModel() => _releaseParkedModel();
+
   Future<void> _releaseParkedModel() async {
     try {
       await whisperReleaseModel();

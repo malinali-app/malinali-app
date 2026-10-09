@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:malinali/services/supported_languages.dart';
 import 'package:malinali/services/voice_preferences.dart';
 import 'package:malinali/theme/malinali_chrome.dart';
 
@@ -54,27 +55,7 @@ class _VoiceSetupPageState extends State<VoiceSetupPage> {
     );
     final isGeneric = selectedPack.ggmlUrl == 'builtin';
 
-    final targets = voiceEnglishTargetModels().where((m) {
-      final targetIso = m.targetLang.localeIntl.locale.languageCode.toLowerCase();
-      if (targetIso == _sourceIso.toLowerCase()) return false;
-
-      // 1. English is always a target for non-English sources
-      if (targetIso == 'en') return true;
-
-      // 2. If we have a direct model from source -> target, allow it
-      final direct = curatedMarianForPair(sourceIso: _sourceIso, targetIso: targetIso);
-      if (direct != null) return true;
-
-      // 3. For English source, show all English -> X models
-      if (_sourceIso.toLowerCase() == 'en') return true;
-
-      // 4. For French source, allow bridge through English to any target
-      if (_sourceIso.toLowerCase() == 'fr') return true;
-
-      // 5. For other languages, restrict to English and French by default
-      // (This covers the bridge Source -> English -> French)
-      return targetIso == 'fr';
-    }).toList();
+    final targets = getAvailableTargetLanguages(sourceIso: _sourceIso);
 
     return Scaffold(
       appBar: AppBar(
@@ -111,19 +92,9 @@ class _VoiceSetupPageState extends State<VoiceSetupPage> {
                 if (v == null) return;
                 setState(() {
                   _sourceIso = v;
-                  // Avoid source == target
-                  if (_sourceIso.toLowerCase() == _targetIso.toLowerCase()) {
-                    if (_sourceIso.toLowerCase() == 'en') {
-                      _targetIso = 'fr';
-                    } else {
-                      _targetIso = 'en';
-                    }
-                  }
-                  // If switching to African source, ensure target is en/fr
-                  if (_sourceIso != 'en' && _sourceIso != 'fr') {
-                    if (_targetIso != 'en' && _targetIso != 'fr') {
-                      _targetIso = 'fr';
-                    }
+                  final available = getAvailableTargetLanguages(sourceIso: _sourceIso);
+                  if (!available.any((t) => t.iso == _targetIso)) {
+                    _targetIso = available.isNotEmpty ? available.first.iso : 'fr';
                   }
                 });
               },
@@ -135,20 +106,18 @@ class _VoiceSetupPageState extends State<VoiceSetupPage> {
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
-          ...targets.map((model) {
-            final iso = model.targetLang.localeIntl.locale.languageCode;
-            final englishName = model.targetLang.nameEn;
-            final subtitle = model.qualityHint != null
-                ? '$englishName • ${model.qualityHint}'
-                : englishName;
+          ...targets.map((target) {
+            final subtitleParts = [
+              if (target.nameEn.isNotEmpty && target.nameEn != target.name)
+                target.nameEn,
+              target.iso.toUpperCase(),
+              if (target.qualityHint != null) target.qualityHint!,
+            ];
+            final subtitle = subtitleParts.join(' · ');
             return RadioListTile<String>(
-              value: iso,
+              value: target.iso,
               groupValue: _targetIso,
-              title: Text(
-                model.targetLang.name.isEmpty
-                    ? model.targetLang.nameEn
-                    : model.targetLang.name,
-              ),
+              title: Text(target.name),
               subtitle: Text(subtitle),
               activeColor: MalinaliChrome.yellowBorder,
               onChanged: (v) {

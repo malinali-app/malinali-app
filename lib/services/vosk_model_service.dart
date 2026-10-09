@@ -72,8 +72,7 @@ class VoskModelService {
     sizeText: '40.3MiB',
     size: 42233323,
     url: 'https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip',
-    isAsset: true,
-    assetPath: 'assets/vosk-model-small-fr-0.22.zip',
+    isAsset: false,
   );
 
   /// Bookmarked official small models from alphacephei.com.

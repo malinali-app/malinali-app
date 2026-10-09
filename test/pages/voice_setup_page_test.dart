@@ -62,12 +62,6 @@ void main() {
 
     expect(find.text('Traduction vocale'), findsOneWidget);
 
-    final sizeHint = find.text('environ 250 Mo');
-    await tester.scrollUntilVisible(sizeHint, 300);
-    await tester.pumpAndSettle();
-    expect(sizeHint, findsOneWidget);
-    expect(find.text('environ 75 Mo'), findsOneWidget);
-
     await tester.scrollUntilVisible(find.text('Continuer'), 200);
     await tester.tap(find.text('Continuer'));
     await tester.pumpAndSettle();
