@@ -5,6 +5,8 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   ffmpeg_kit_flutter_new_audio
   file_selector_windows
+  flutter_tts
+  just_audio_windows_plus
   permission_handler_windows
   record_windows
   share_plus
@@ -14,6 +16,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
   marian_flutter
+  whisper_ggml
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

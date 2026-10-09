@@ -3,20 +3,17 @@ import 'package:flutter/services.dart';
 import 'package:malinali/pages/byo_marian_page.dart';
 import 'package:malinali/services/african_helsinki_models.dart';
 import 'package:malinali/services/translation_model_service.dart';
-import 'package:malinali/services/vosk_model_service.dart';
 import 'package:malinali/theme/malinali_chrome.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class TranslationSettingsPage extends StatefulWidget {
   final TranslationModelService modelService;
   final TranslationModel? selectedModel;
-  final VoskModelService? voskService;
 
   const TranslationSettingsPage({
     super.key,
     required this.modelService,
     this.selectedModel,
-    this.voskService,
   });
 
   @override
@@ -26,44 +23,31 @@ class TranslationSettingsPage extends StatefulWidget {
 class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
   List<TranslationModel> _allModels = [];
   List<TranslationModel> _filteredModels = [];
-  List<VoskModel> _voskModels = [];
   bool _loading = true;
   String _searchQuery = '';
   bool _searchSource = true; // true = search in source, false = search in target
   bool _onlyDownloaded = false;
   Map<String, bool> _downloadedStatus = {};
-  Map<String, bool> _voskDownloadedStatus = {};
-
-  late final VoskModelService _voskService;
 
   @override
   void initState() {
     super.initState();
-    _voskService = widget.voskService ?? VoskModelService();
     _loadModels();
   }
 
   Future<void> _loadModels() async {
     try {
       final models = await widget.modelService.fetchAllAvailableModels();
-      final voskModels = await _voskService.fetchAllSmallModels();
-      
+
       final status = <String, bool>{};
       for (final model in models) {
         status[model.modelId] = await widget.modelService.isModelDownloaded(model);
       }
 
-      final voskStatus = <String, bool>{};
-      for (final vm in voskModels) {
-        voskStatus[vm.name] = await _voskService.isModelDownloaded(vm);
-      }
-
       if (mounted) {
         setState(() {
           _allModels = models;
-          _voskModels = voskModels;
           _downloadedStatus = status;
-          _voskDownloadedStatus = voskStatus;
           _applyFilter();
           _loading = false;
         });
@@ -111,10 +95,6 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
         }
       }).toList();
     }
-  }
-
-  VoskModel? _matchingVoskModel(TranslationModel model) {
-    return _voskService.findModelForLanguage(model.sourceLang, _voskModels);
   }
 
   Future<void> _openByo() async {
@@ -251,10 +231,6 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
                               widget.selectedModel?.modelId == model.modelId;
                           final isDownloaded =
                               _downloadedStatus[model.modelId] ?? false;
-                          final voskModel = _matchingVoskModel(model);
-                          final hasVosk = voskModel != null;
-                          final isVoskDownloaded =
-                              hasVosk && (_voskDownloadedStatus[voskModel.name] ?? false);
 
                           return ListTile(
                             tileColor: model.isCustom
@@ -281,19 +257,6 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
                                     ),
                                   ),
                                 ),
-                                if (hasVosk)
-                                  Tooltip(
-                                    message: isVoskDownloaded
-                                        ? 'Saisie vocale disponible et prête (${voskModel.langText})'
-                                        : 'Saisie vocale disponible au téléchargement (${voskModel.langText})',
-                                    child: Icon(
-                                      Icons.mic,
-                                      size: 18,
-                                      color: isVoskDownloaded
-                                          ? MalinaliChrome.success
-                                          : MalinaliChrome.blueChip,
-                                    ),
-                                  ),
                               ],
                             ),
                             subtitle: Column(
@@ -339,74 +302,44 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
                                 return;
                               }
 
-                              bool downloadVoskAlso = false;
                               final confirm = await showDialog<bool>(
                                 context: context,
                                 builder: (context) {
-                                  return StatefulBuilder(
-                                    builder: (context, setDialogState) {
-                                      return AlertDialog(
-                                        title: const Text('Téléchargement requis'),
-                                        content: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'Le modèle de traduction pour ${model.displayName} doit être téléchargé'
-                                              ' (${model.downloadSizeHint ?? 'environ 150 Mo'}).',
-                                            ),
-                                            const SizedBox(height: 12),
-                                            const Text(
-                                              'Ne quittez pas l\'écran et ne mettez pas l\'application en arrière-plan pendant le téléchargement.',
-                                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.redAccent),
-                                            ),
-                                            if (hasVosk && !isVoskDownloaded) ...[
-                                              const SizedBox(height: 12),
-                                              CheckboxListTile(
-                                                contentPadding: EdgeInsets.zero,
-                                                title: Text(
-                                                  'Télécharger aussi la saisie vocale pour ${voskModel.langText} (${voskModel.sizeText})',
-                                                  style: const TextStyle(
-                                                    fontSize: 13,
-                                                  ),
-                                                ),
-                                                value: downloadVoskAlso,
-                                                onChanged: (val) {
-                                                  setDialogState(() {
-                                                    downloadVoskAlso = val ?? false;
-                                                  });
-                                                },
-                                              ),
-                                            ],
-                                          ],
+                                  return AlertDialog(
+                                    title: const Text('Téléchargement requis'),
+                                    content: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Le modèle de traduction pour ${model.displayName} doit être téléchargé'
+                                          ' (${model.downloadSizeHint ?? 'environ 150 Mo'}).',
                                         ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.pop(context, false),
-                                            child: const Text('Annuler'),
-                                          ),
-                                          ElevatedButton(
-                                            onPressed: () =>
-                                                Navigator.pop(context, true),
-                                            child: const Text('Télécharger'),
-                                          ),
-                                        ],
-                                      );
-                                    },
+                                        const SizedBox(height: 12),
+                                        const Text(
+                                          'Ne quittez pas l\'écran et ne mettez pas l\'application en arrière-plan pendant le téléchargement.',
+                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.redAccent),
+                                        ),
+                                      ],
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(context, false),
+                                        child: const Text('Annuler'),
+                                      ),
+                                      ElevatedButton(
+                                        onPressed: () =>
+                                            Navigator.pop(context, true),
+                                        child: const Text('Télécharger'),
+                                      ),
+                                    ],
                                   );
                                 },
                               );
-                              if (confirm != true) return;
-
-                              if (downloadVoskAlso && hasVosk) {
-                                _voskService.downloadModel(voskModel).catchError((_) => '');
-                              }
-
-                              if (mounted) {
-                                Navigator.pop(context, model);
-                              }
+                              if (confirm != true || !context.mounted) return;
+                              Navigator.pop(context, model);
                             },
                           );
                         },
@@ -419,15 +352,23 @@ class _TranslationSettingsPageState extends State<TranslationSettingsPage> {
 
   Future<void> _launchHF(String modelId) async {
     final url = Uri.parse('https://huggingface.co/$modelId');
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url);
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      debugPrint('Error launching HF: $e');
     }
   }
 
   Future<void> _launchBleuPaper() async {
     final url = Uri.parse(kBleuPaperUrl);
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url);
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      debugPrint('Error launching BLEU paper: $e');
     }
   }
 }

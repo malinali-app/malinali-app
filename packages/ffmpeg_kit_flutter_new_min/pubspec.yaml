@@ -1,0 +1,16 @@
+name: ffmpeg_kit_flutter_new_min
+description: >-
+  Dart-only stand-in so whisper_ggml links the Opus FFmpeg kit already
+  used by Malinali, instead of a second native library with the same
+  Android namespace.
+publish_to: none
+version: 2.1.0
+
+environment:
+  sdk: ">=3.1.0 <4.0.0"
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  ffmpeg_kit_flutter_new_audio: ^2.5.2

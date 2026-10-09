@@ -82,4 +82,28 @@ void main() {
     expect(picked, isNotNull);
     expect(languageDisplayName(picked!), 'Pulaar');
   });
+
+  testWidgets('Language row shows BLEU and the model info icon', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: LanguagePickerSheet(
+            languages: [Languages.wolof],
+            title: 'Langue cible',
+            badgesFor: (_) => const LanguagePickerBadges(
+              translationAvailable: true,
+              qualityHint: 'BLEU 9.3 / 100',
+              modelId: 'malinali-app/traduction-fr-wolof',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('BLEU 9.3 / 100'), findsOneWidget);
+    expect(find.byIcon(Icons.info_outline), findsOneWidget);
+    expect(find.byTooltip("Plus d'infos"), findsOneWidget);
+  });
 }

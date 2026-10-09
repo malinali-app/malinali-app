@@ -81,10 +81,10 @@ const List<AfricanOpusPair> kAfricanHelsinkiOpusPairs = [
   AfricanOpusPair(sourceIso: 'fr', targetIso: 'ha', repoName: 'opus-mt-fr-ha', qualityHint: 'BLEU 24.4'),
   AfricanOpusPair(sourceIso: 'ha', targetIso: 'fr', repoName: 'opus-mt-ha-fr', qualityHint: 'BLEU 24.3'),
   AfricanOpusPair(sourceIso: 'de', targetIso: 'ha', repoName: 'opus-mt-de-ha', qualityHint: 'OPUS'),
-  AfricanOpusPair(sourceIso: 'ha', targetIso: 'es', repoName: 'opus-mt-ha-es', qualityHint: 'OPUS'),
+  AfricanOpusPair(sourceIso: 'ha', targetIso: 'es', repoName: 'opus-mt-ha-es', qualityHint: 'BLEU 21.8'),
   AfricanOpusPair(sourceIso: 'es', targetIso: 'ha', repoName: 'opus-mt-es-ha', qualityHint: 'OPUS'),
   AfricanOpusPair(sourceIso: 'fi', targetIso: 'ha', repoName: 'opus-mt-fi-ha', qualityHint: 'OPUS'),
-  AfricanOpusPair(sourceIso: 'ha', targetIso: 'fi', repoName: 'opus-mt-ha-fi', qualityHint: 'OPUS'),
+  AfricanOpusPair(sourceIso: 'ha', targetIso: 'fi', repoName: 'opus-mt-ha-fi', qualityHint: 'BLEU 21.9'),
   AfricanOpusPair(sourceIso: 'sv', targetIso: 'ha', repoName: 'opus-mt-sv-ha', qualityHint: 'OPUS'),
   AfricanOpusPair(sourceIso: 'ha', targetIso: 'sv', repoName: 'opus-mt-ha-sv', qualityHint: 'OPUS'),
 

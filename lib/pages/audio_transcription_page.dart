@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:aptabase_flutter/aptabase_flutter.dart';
@@ -7,12 +8,14 @@ import 'package:flutter/material.dart';
 import 'package:malinali/services/audio_transcription_service.dart';
 import 'package:malinali/services/speech_recognition_service.dart';
 import 'package:malinali/services/vosk_model_service.dart';
+import 'package:malinali/services/whisper_speech_service.dart';
 import 'package:malinali/theme/malinali_chrome.dart';
 import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 
-/// Offline audio → text: pick .opus (WhatsApp) → decode → Vosk → glimpse.
+/// Offline audio → text. Active Whisper pack (tiny → English by default),
+/// or Vosk when asked.
 class AudioTranscriptionPage extends StatefulWidget {
   const AudioTranscriptionPage({
     super.key,
@@ -20,6 +23,8 @@ class AudioTranscriptionPage extends StatefulWidget {
     this.speechService,
     this.voskModel,
     this.transcriptionService,
+    this.whisperService,
+    this.useWhisper = true,
     this.initialAudioPath,
     this.initialTranscript,
     this.translationPairLabel,
@@ -29,6 +34,10 @@ class AudioTranscriptionPage extends StatefulWidget {
   final SpeechRecognitionService? speechService;
   final VoskModel? voskModel;
   final AudioTranscriptionService? transcriptionService;
+  final WhisperSpeechService? whisperService;
+
+  /// When true, the file is translated to English with Whisper tiny.
+  final bool useWhisper;
 
   /// Optional path for tests / deep links (e.g. shared WhatsApp note).
   final String? initialAudioPath;
@@ -46,7 +55,9 @@ class AudioTranscriptionPage extends StatefulWidget {
 enum _AudioPhase { idle, working, done, error }
 
 class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
-  late final SpeechRecognitionService _speech;
+  SpeechRecognitionService? _speech;
+  WhisperSpeechService? _whisper;
+  bool _ownsWhisper = false;
   late final AudioTranscriptionService _service;
   final _glimpseScrollController = ScrollController();
 
@@ -68,17 +79,27 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
   @override
   void initState() {
     super.initState();
-    _speech =
-        widget.speechService ??
-        SpeechRecognitionService(modelService: widget.voskService);
-    _service =
-        widget.transcriptionService ??
-        AudioTranscriptionService(
-          transcriber: VoskWaveformTranscriber(
-            speech: _speech,
-            model: widget.voskModel ?? VoskModelService.assetFrenchModel,
-          ),
-        );
+    if (widget.useWhisper) {
+      _whisper = widget.whisperService ?? WhisperSpeechService();
+      _ownsWhisper = widget.whisperService == null;
+      _service =
+          widget.transcriptionService ??
+          AudioTranscriptionService(
+            wholeFileTranscriber: (wav) => _whisper!.transcribeWav(wav.path),
+          );
+    } else {
+      _speech =
+          widget.speechService ??
+          SpeechRecognitionService(modelService: widget.voskService);
+      _service =
+          widget.transcriptionService ??
+          AudioTranscriptionService(
+            transcriber: VoskWaveformTranscriber(
+              speech: _speech!,
+              model: widget.voskModel ?? VoskModelService.assetFrenchModel,
+            ),
+          );
+    }
 
     final initial = widget.initialAudioPath;
     if (initial != null && initial.isNotEmpty) {
@@ -102,7 +123,11 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
     _glimpseScrollController.dispose();
     // Do not dispose shared speech if injected from TranslatePage.
     if (widget.speechService == null) {
-      _speech.dispose();
+      _speech?.dispose();
+    }
+    if (_ownsWhisper) {
+      final whisper = _whisper;
+      if (whisper != null) unawaited(whisper.dispose());
     }
     super.dispose();
   }
@@ -153,8 +178,8 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
     });
 
     try {
-      if (_speech.isListening) {
-        await _speech.stopListening();
+      if (_speech?.isListening == true) {
+        await _speech!.stopListening();
       }
 
       final workDir = await audioSttWorkDirectory();
@@ -278,9 +303,10 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
   Widget build(BuildContext context) {
     final showGlimpse = _showGlimpse;
     final canExport = _canExport;
-    final voskLabel =
-        widget.voskModel?.langText ??
-        VoskModelService.assetFrenchModel.langText;
+    final voiceLabel = widget.useWhisper
+        ? 'Whisper tiny → anglais'
+        : (widget.voskModel?.langText ??
+            VoskModelService.assetFrenchModel.langText);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Transcription audio')),
@@ -311,7 +337,7 @@ class _AudioTranscriptionPageState extends State<AudioTranscriptionPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Modèle voix : $voskLabel',
+                      'Modèle voix : $voiceLabel',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         fontWeight: FontWeight.w600,
                         color: MalinaliChrome.mutedOnBlue,

@@ -57,7 +57,9 @@ class _DocumentTranslationPageState extends State<DocumentTranslationPage> {
   @override
   void initState() {
     super.initState();
-    _service = widget.translationService ?? DocumentTranslationService();
+    _service =
+        widget.translationService ??
+        DocumentTranslationService(splitSentences: true);
   }
 
   @override
@@ -142,6 +144,7 @@ class _DocumentTranslationPageState extends State<DocumentTranslationPage> {
       final result = await _service.translateDocument(
         sourceText: sourceText,
         marian: widget.marian,
+        prepareSource: widget.model.prepareSourceText,
         onProgress: (progress) {
           if (!mounted) return;
           setState(() {

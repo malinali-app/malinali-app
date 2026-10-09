@@ -56,6 +56,16 @@ void main() {
     test('normalizes CRLF', () {
       expect(service.chunkText('A\r\n\r\nB'), ['A', 'B']);
     });
+
+    test('splitSentences: true forces one chunk per sentence', () {
+      final strictService = DocumentTranslationService(splitSentences: true);
+      const text = 'Phrase un. Phrase deux ! Phrase trois ?';
+      expect(strictService.chunkText(text), [
+        'Phrase un.',
+        'Phrase deux !',
+        'Phrase trois ?',
+      ]);
+    });
   });
 
   group('translateDocument', () {
@@ -109,6 +119,35 @@ void main() {
         mockMarian.translate('Beta.', config: kDocumentTranslationConfig),
       ).called(1);
       verifyNoMoreInteractions(mockMarian);
+    });
+
+    test('prepareSource prefixes each chunk before Marian', () async {
+      when(
+        mockMarian.translate(any, config: anyNamed('config')),
+      ).thenAnswer((invocation) async {
+        final text = invocation.positionalArguments[0] as String;
+        return 'TR:$text';
+      });
+
+      final result = await service.translateDocument(
+        sourceText: 'Alpha.\n\nBeta.',
+        marian: mockMarian,
+        prepareSource: (chunk) => '>>wol<< $chunk',
+      );
+
+      expect(result.text, 'TR:>>wol<< Alpha.\n\nTR:>>wol<< Beta.');
+      verify(
+        mockMarian.translate(
+          '>>wol<< Alpha.',
+          config: kDocumentTranslationConfig,
+        ),
+      ).called(1);
+      verify(
+        mockMarian.translate(
+          '>>wol<< Beta.',
+          config: kDocumentTranslationConfig,
+        ),
+      ).called(1);
     });
 
     test('uses provided TranslationConfig', () async {

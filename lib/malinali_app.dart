@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:malinali/pages/translate_page.dart';
-import 'package:malinali/services/marian_runtime.dart';
+import 'package:malinali/pages/onboarding_page.dart';
+import 'package:malinali/pages/voice_chat_page.dart';
 import 'package:malinali/services/translation_model_service.dart';
+import 'package:malinali/services/voice_preferences.dart';
 import 'package:malinali/theme/malinali_chrome.dart';
 import 'package:marian_flutter/marian_flutter.dart';
 
@@ -19,11 +20,7 @@ class MalinaliApp extends StatelessWidget {
   }
 }
 
-/// Loads the preferred Marian model once, then opens [TranslatePage].
-///
-/// Reuses [MarianRuntime] when the process is still alive so background/resume
-/// does not re-show this screen. On cold start, restores the last selected
-/// model when already downloaded.
+/// Inits Rust once, then opens the app home.
 class MarianBootScreen extends StatefulWidget {
   const MarianBootScreen({super.key});
 
@@ -32,66 +29,53 @@ class MarianBootScreen extends StatefulWidget {
 }
 
 class _MarianBootScreenState extends State<MarianBootScreen> {
-  String _status = 'Chargement du modèle…';
+  String _status = 'Démarrage…';
   String? _error;
+  final _prefsStore = VoicePreferencesStore();
 
   @override
   void initState() {
     super.initState();
-    _loadModel();
+    _boot();
   }
 
-  Future<void> _openTranslate(MarianService marian, TranslationModel model) {
-    return Navigator.of(context).pushReplacement(
+  Future<void> _openHome(VoicePreferences prefs) async {
+    if (!mounted) return;
+
+    Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => TranslatePage(
-          initialMarian: marian,
-          initialModel: model,
+        settings: const RouteSettings(name: '/'),
+        builder: (_) => VoiceChatPage(
+          initialPrefs: prefs,
         ),
       ),
     );
   }
 
-  Future<void> _loadModel() async {
-    final runtime = MarianRuntime.instance;
-    if (runtime.isReady) {
-      if (!mounted) return;
-      await _openTranslate(runtime.marian!, runtime.model!);
-      return;
-    }
-
-    final modelService = TranslationModelService();
+  Future<void> _boot() async {
     try {
       setState(() {
-        _status = 'Initialisation Rust…';
+        _status = 'Initialisation…';
         _error = null;
       });
       await MarianService.initRust();
 
       if (!mounted) return;
-      final bootModel = await MarianRuntime.resolveBootModel(modelService);
-      setState(() => _status = 'Chargement ${bootModel.displayName}…');
+      final prefs = await _prefsStore.load();
 
-      MarianService marian;
-      if (bootModel.isAsset) {
-        marian = await MarianService.loadFromAssets(
-          assetFolder: bootModel.modelId,
-        );
-      } else {
-        final dir = await modelService.downloadModel(bootModel);
+      if (prefs == null) {
         if (!mounted) return;
-        setState(() => _status = 'Chargement du modèle…');
-        marian = await MarianService.loadFromDirectory(dir.path);
+        final newPrefs = await Navigator.of(context).push<VoicePreferences>(
+          MaterialPageRoute(
+            builder: (_) => OnboardingFlow(store: _prefsStore),
+          ),
+        );
+        if (newPrefs != null) {
+          await _openHome(newPrefs);
+        }
+      } else {
+        await _openHome(prefs);
       }
-
-      runtime.attach(marian, bootModel);
-      await MarianRuntime.saveLastSelectedModel(bootModel);
-
-      if (!mounted) return;
-      await _openTranslate(marian, bootModel);
-
-      // Warmup off the critical path so resume / cold start feels snappier.
-      marian.translate('Bonjour').then((_) {}, onError: (_) {});
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -126,7 +110,7 @@ class _MarianBootScreenState extends State<MarianBootScreen> {
                 ),
                 const SizedBox(height: 16),
                 FilledButton(
-                  onPressed: _loadModel,
+                  onPressed: _boot,
                   child: const Text('Réessayer'),
                 ),
               ],

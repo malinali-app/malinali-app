@@ -138,6 +138,82 @@ void main() {
       expect(fula.downloadSizeHint, '~285 Mo');
     });
 
+    test('French → Wolof candle fine-tune is a public catalogue model', () {
+      final wo = TranslationModelService.candleFineTunes.firstWhere(
+        (m) => m.modelId == 'malinali-app/traduction-fr-wolof',
+      );
+      expect(wo.requiresAuth, isFalse);
+      expect(wo.sourceLang.localeIntl.locale.languageCode, 'fr');
+      expect(wo.targetLang.localeIntl.locale.languageCode, 'wo');
+      expect(wo.targetLang.name, 'Wolof');
+      expect(wo.targetLang.nameEn, 'Wolof');
+      expect(wo.qualityHint, 'BLEU 9.3 / 100');
+      expect(wo.sourcePrefix, isNull);
+    });
+
+    test('English → Wolof candle fine-tune prefixes >>wol<<', () {
+      final wo = TranslationModelService.candleFineTunes.firstWhere(
+        (m) => m.modelId == 'malinali-app/traduction-en-wolof',
+      );
+      expect(wo.requiresAuth, isFalse);
+      expect(wo.sourceLang.localeIntl.locale.languageCode, 'en');
+      expect(wo.targetLang.localeIntl.locale.languageCode, 'wo');
+      expect(wo.qualityHint, 'BLEU 76.1 / 100');
+      expect(wo.sourcePrefix, TranslationModelService.kEngWolofSourcePrefix);
+      expect(
+        wo.prepareSourceText('Good evening'),
+        '>>wol<< Good evening',
+      );
+      expect(
+        wo.prepareSourceText('>>wol<< already'),
+        '>>wol<< already',
+      );
+    });
+
+    test('Wolof → English candle fine-tune has no source prefix', () {
+      final wo = TranslationModelService.candleFineTunes.firstWhere(
+        (m) => m.modelId == 'malinali-app/traduction-wolof-en',
+      );
+      expect(wo.requiresAuth, isFalse);
+      expect(wo.sourceLang.localeIntl.locale.languageCode, 'wo');
+      expect(wo.targetLang.localeIntl.locale.languageCode, 'en');
+      expect(wo.qualityHint, 'BLEU 68.5 / 100');
+      expect(wo.sourcePrefix, isNull);
+      expect(wo.prepareSourceText('Nanga def'), 'Nanga def');
+    });
+
+    test('prepareSourceText is a no-op without prefix', () {
+      final model = TranslationModel(
+        sourceLang: Languages.french,
+        targetLang: Languages.english,
+        modelId: 'Xenova/opus-mt-fr-en',
+      );
+      expect(model.prepareSourceText('Bonjour'), 'Bonjour');
+    });
+
+    test('preference JSON round-trips English→Wolof sourcePrefix', () {
+      final wo = TranslationModelService.candleFineTunes.firstWhere(
+        (m) => m.modelId == 'malinali-app/traduction-en-wolof',
+      );
+      final restored =
+          TranslationModel.fromPreferenceJson(wo.toPreferenceJson());
+      expect(restored, isNotNull);
+      expect(restored!.sourcePrefix, TranslationModelService.kEngWolofSourcePrefix);
+      expect(restored.prepareSourceText('Hi'), '>>wol<< Hi');
+    });
+
+    test('preference JSON restores sourcePrefix from catalogue if omitted', () {
+      final restored = TranslationModel.fromPreferenceJson({
+        'modelId': 'malinali-app/traduction-en-wolof',
+        'sourceIso': 'en',
+        'targetIso': 'wo',
+        'sourceName': 'English',
+        'targetName': 'Wolof',
+      });
+      expect(restored, isNotNull);
+      expect(restored!.sourcePrefix, TranslationModelService.kEngWolofSourcePrefix);
+    });
+
     test('boot default is public tiny Helsinki FR→EN', () {
       final boot = TranslationModelService.defaultBootModel;
       expect(boot.modelId, 'Helsinki-NLP/opus-mt_tiny_fra-eng');

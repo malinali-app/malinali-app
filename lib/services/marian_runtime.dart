@@ -74,6 +74,7 @@ class MarianRuntime {
       for (final known in [
         TranslationModelService.defaultBootModel,
         ...TranslationModelService.privateModels,
+        ...TranslationModelService.candleFineTunes,
       ]) {
         if (known.modelId == last.modelId &&
             (known.isAsset || await modelService.isModelDownloaded(known))) {

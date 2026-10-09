@@ -88,3 +88,5 @@ tool/publish_african_candle.py
 /temp_model
 /model_upload_files
 /Malinali_do_not_delete
+/hf_download.txt
+/secret_cw.txt
