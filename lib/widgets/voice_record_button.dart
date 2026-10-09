@@ -35,7 +35,7 @@ class VoiceRecordButton extends StatefulWidget {
 
 class _VoiceRecordButtonState extends State<VoiceRecordButton>
     with SingleTickerProviderStateMixin {
-  static const double _size = 56;
+  static const double _size = 60;
 
   late final AnimationController _controller;
   late final Animation<double> _buttonScale;

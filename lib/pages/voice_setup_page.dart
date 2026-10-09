@@ -78,7 +78,7 @@ class _VoiceSetupPageState extends State<VoiceSetupPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Conversation'),
+        title: const Text('Traduction vocale'),
         automaticallyImplyLeading: widget.initial != null,
       ),
       body: ListView(
