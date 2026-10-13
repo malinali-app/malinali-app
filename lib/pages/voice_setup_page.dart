@@ -169,6 +169,7 @@ class _VoiceSetupPageState extends State<VoiceSetupPage> {
                   )
                 : const Text('Continuer'),
           ),
+          const SizedBox(height: 24),
         ],
       ),
     ));
