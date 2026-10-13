@@ -196,13 +196,24 @@ class MockTranslationModelService extends _i1.Mock
           as _i4.Future<bool>);
 
   @override
-  _i4.Future<_i3.Directory> downloadModel(_i2.TranslationModel? model) =>
+  _i4.Future<_i3.Directory> downloadModel(
+    _i2.TranslationModel? model, {
+    void Function(int, int)? onProgress,
+  }) =>
       (super.noSuchMethod(
-            Invocation.method(#downloadModel, [model]),
+            Invocation.method(
+              #downloadModel,
+              [model],
+              {#onProgress: onProgress},
+            ),
             returnValue: _i4.Future<_i3.Directory>.value(
               _FakeDirectory_1(
                 this,
-                Invocation.method(#downloadModel, [model]),
+                Invocation.method(
+                  #downloadModel,
+                  [model],
+                  {#onProgress: onProgress},
+                ),
               ),
             ),
           )

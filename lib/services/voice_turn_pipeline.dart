@@ -1,10 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:malinali/services/document_translation_service.dart';
 import 'package:malinali/services/marian_runtime.dart';
+import 'package:malinali/services/text_translator.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/voice_speech_resolver.dart';
 import 'package:malinali/services/whisper_speech_service.dart';
-import 'package:marian_flutter/marian_flutter.dart';
 
 /// One voice turn shown in the chat (may still be translating).
 class VoiceTurn {
@@ -108,11 +108,19 @@ typedef VoiceTranscriptReady = void Function(VoiceTurn partial);
 
 /// Runs speech → English → Marian English→target for a recorded WAV.
 class VoiceTurnPipeline {
+  /// When set, overrides `TextTranslatorLoader.load` so tests can inspect
+  /// `DecodeConfig` passed to [TextTranslator.translate].
+  final Future<TextTranslator> Function(
+    TranslationModel model,
+    String directory,
+  )? loadTranslator;
+
   VoiceTurnPipeline({
     required this.whisper,
     required this.modelService,
     this.resolver = const VoiceSpeechResolver(),
     this.translate,
+    this.loadTranslator,
   });
 
   final WhisperSpeechService whisper;
@@ -122,27 +130,35 @@ class VoiceTurnPipeline {
   /// When set, skips on-device Marian and calls this instead.
   final VoiceMarianTranslate? translate;
 
-  Future<({MarianService service, int loadMs})> _loadMarian(
+  Future<({TextTranslator service, int loadMs})> _loadMarian(
     TranslationModel model, {
     void Function(String status)? onStatus,
   }) async {
     final runtime = MarianRuntime.instance;
     if (runtime.isReady && runtime.model?.modelId == model.modelId) {
-      return (service: runtime.marian!, loadMs: 0);
+      return (service: runtime.translator!, loadMs: 0);
     }
     onStatus?.call('Chargement ${model.displayName}…');
-    // Drop the previous Candle session before loading another ~300 Mo pack.
-    // MarianService has no dispose; clearing the Dart ref lets the FRB object
-    // drop so native weights can free before the next mmap.
+    // Drop the previous session before loading another ~300 Mo pack.
     runtime.clear();
     final dir = await modelService.downloadModel(model);
     final sw = Stopwatch()..start();
-    final marian = await MarianService.loadFromDirectory(dir.path);
+    final loader = loadTranslator;
+    final marian = loader != null
+        ? await loader(model, dir.path)
+        : await TextTranslatorLoader.load(
+            model: model,
+            directory: dir.path,
+          );
     debugPrint(
       'Marian load ${model.modelId} in ${sw.elapsedMilliseconds} ms',
     );
     runtime.attach(marian, model);
-    await MarianRuntime.saveLastSelectedModel(model);
+    try {
+      await MarianRuntime.saveLastSelectedModel(model);
+    } catch (_) {
+      // Ignore path_provider errors in pure unit tests.
+    }
     return (service: marian, loadMs: sw.elapsedMilliseconds);
   }
 
@@ -173,7 +189,7 @@ class VoiceTurnPipeline {
     final result = await service.translateDocument(
       sourceText: text,
       marian: loaded.service,
-      config: kDocumentTranslationConfig,
+      config: kVoiceDecodeConfig,
       prepareSource: (chunk) => model.prepareSourceText(chunk),
       joiner: ' ',
     );
@@ -205,10 +221,16 @@ class VoiceTurnPipeline {
         (plan.strategy == VoiceSpeechStrategy.englishOutputFineTune &&
             plan.specialist == null)) {
       onStatus?.call('Téléchargement du modèle vocal…');
-      onProgress?.call(null);
       await whisper.setGenericModel(plan.genericModel);
       await whisper.setActivePack(null);
-      await whisper.ensureGenericModel(plan.genericModel);
+      await whisper.ensureGenericModel(
+        plan.genericModel,
+        (received, total) {
+          if (total > 0) {
+            onProgress?.call(received / total);
+          }
+        },
+      );
     } else if (plan.specialist != null) {
       onStatus?.call('Téléchargement du modèle vocal…');
       onProgress?.call(null);
@@ -223,15 +245,17 @@ class VoiceTurnPipeline {
       );
     }
 
-    for (final model in plan.marianDownloads) {
-      onStatus?.call('Téléchargement ${model.displayName}…');
+    final marian = plan.marianDownloads;
+    for (var i = 0; i < marian.length; i++) {
+      final model = marian[i];
+      if (await modelService.isModelDownloaded(model)) continue;
+      final step = marian.length == 1 ? '' : ' (${i + 1}/${marian.length})';
+      onStatus?.call('Téléchargement ${model.displayName}$step…');
       onProgress?.call(null);
       await modelService.downloadModel(
         model,
         onProgress: (received, total) {
-          if (total > 0) {
-            onProgress?.call(received / total);
-          }
+          if (total > 0) onProgress?.call(received / total);
         },
       );
     }
@@ -290,7 +314,7 @@ class VoiceTurnPipeline {
     final whisperMs = sttSw.elapsedMilliseconds;
     debugPrint('Whisper STT done in $whisperMs ms');
 
-    // Whisper keep_model_loaded parks ~250 Mo; drop it before Candle.
+    // Whisper keep_model_loaded parks the ASR graphs; drop it before Candle.
     onStatus?.call('Libération du modèle vocal…');
     final releaseSw = Stopwatch()..start();
     await whisper.releaseParkedModel();
@@ -353,6 +377,7 @@ class VoiceTurnPipeline {
         }
         final out = await _translate(toTarget, raw, onStatus: onStatus);
         hops.add(out.timing);
+        MarianRuntime.instance.clear();
         final targetText = out.text.trim();
         if (targetText.isEmpty) {
           throw StateError('Traduction cible vide.');
@@ -374,6 +399,7 @@ class VoiceTurnPipeline {
 
     final toTarget = plan.englishToTarget;
     if (toTarget == null) {
+      MarianRuntime.instance.clear();
       final timings = VoiceStageTimings(
         whisperMs: whisperMs,
         releaseMs: releaseMs,
@@ -390,12 +416,15 @@ class VoiceTurnPipeline {
       );
     }
 
+    // Drop the intermediate source→en session before loading en→target (~925 MB ONNX).
+    MarianRuntime.instance.clear();
     final fr = await _translate(
       toTarget,
       englishText ?? sourceTranscript ?? '',
       onStatus: onStatus,
     );
     hops.add(fr.timing);
+    MarianRuntime.instance.clear();
     final targetText = fr.text.trim();
     if (targetText.isEmpty) {
       throw StateError('Traduction cible vide.');

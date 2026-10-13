@@ -6,14 +6,13 @@ import 'package:malinali/pages/document_translation_page.dart';
 import 'package:malinali/pages/translation_settings_page.dart';
 import 'package:malinali/services/document_translation_service.dart';
 import 'package:malinali/services/marian_runtime.dart';
+import 'package:malinali/services/text_translator.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/tts_service.dart';
 import 'package:malinali/services/voice_preferences.dart';
 import 'package:malinali/theme/malinali_chrome.dart';
-import 'package:malinali/widgets/language_picker_sheet.dart';
 import 'package:malinali/widgets/language_pill.dart';
 import 'package:malinali/widgets/malinali_drawer.dart';
-import 'package:marian_flutter/marian_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
 /// Text-only MarianMT translation screen.
@@ -25,7 +24,7 @@ class TranslatePage extends StatefulWidget {
     this.modelService,
   });
 
-  final MarianService initialMarian;
+  final TextTranslator initialMarian;
   final TranslationModel? initialModel;
   final TranslationModelService? modelService;
 
@@ -40,7 +39,7 @@ class _TranslatePageState extends State<TranslatePage> {
   late final TranslationModelService _modelService;
   late final TtsService _ttsService;
 
-  late MarianService _marian;
+  late TextTranslator _marian;
 
   Language _sourceLang = Languages.french;
   Language _targetLang = Languages.english;
@@ -202,12 +201,15 @@ class _TranslatePageState extends State<TranslatePage> {
     });
 
     try {
-      MarianService marian;
+      final TextTranslator marian;
       if (model.isAsset) {
-        marian = await MarianService.loadFromAssets(assetFolder: model.modelId);
+        marian = await TextTranslatorLoader.load(model: model);
       } else {
         final dir = await _modelService.downloadModel(model);
-        marian = await MarianService.loadFromDirectory(dir.path);
+        marian = await TextTranslatorLoader.load(
+          model: model,
+          directory: dir.path,
+        );
       }
 
       if (!mounted) return;

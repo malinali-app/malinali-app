@@ -2,7 +2,7 @@ name: malinali
 description: "French ↔ Pulaar translator (on-device MarianMT)."
 publish_to: 'none'
 
-version: 1.1.8+118
+version: 1.2.1+121
 
 environment:
   sdk: ^3.7.2
@@ -11,6 +11,7 @@ dependencies:
   flutter:
     sdk: flutter
 
+  intl: any
   path_provider: ^2.1.1
   args: ^2.7.0
   aptabase_flutter: ^0.5.0
@@ -48,16 +49,9 @@ dependencies:
   filebridge:
     path: packages/filebridge
   # Leanest maintained Flutter package that includes Opus (WhatsApp voice notes).
-  # There is no pub package named "ffmpeg-kit-free"; `_audio` is the Opus-capable tier.
-  ffmpeg_kit_flutter_new_audio: ^2.5.2
-  # whisper.cpp. Its ffmpeg_kit_flutter_new_min dependency is overridden below:
-  # that kit uses the same Android namespace as ffmpeg_kit_flutter_new_audio.
-  whisper_ggml: ^2.7.1
+  ffmpeg_kit_flutter_new_audio: ^2.5.2 #for WhatsApp voice note transcription
+  sherpa_onnx: ^1.13.8
   ffi: ^2.2.0
-
-dependency_overrides:
-  ffmpeg_kit_flutter_new_min:
-    path: packages/ffmpeg_kit_flutter_new_min
 
 dev_dependencies:
   flutter_test:

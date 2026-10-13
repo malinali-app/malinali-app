@@ -98,7 +98,8 @@ List<TargetLanguageOption> getAvailableTargetLanguages({
       iso: 'wo',
       name: 'Wolof',
       nameEn: 'Wolof',
-      qualityHint: 'BLEU 9.3 / 100',
+      // Direct FR→WO is BLEU 9.3; voice/auto uses FR→EN then LocaleNLP en→wo.
+      qualityHint: 'BLEU 76.1 / 100',
     ));
   } else if (src == 'en') {
     targets.add(const TargetLanguageOption(

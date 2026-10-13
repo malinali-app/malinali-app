@@ -12,7 +12,6 @@ import 'package:malinali/widgets/connectivity_builder.dart';
 import 'package:malinali/widgets/language_pill.dart';
 import 'package:malinali/widgets/malinali_drawer.dart';
 import 'package:malinali/services/malinali_audio_open_intent.dart';
-import 'package:malinali/services/marian_runtime.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/tts_service.dart';
 import 'package:malinali/services/voice_preferences.dart';
@@ -23,7 +22,6 @@ import 'package:malinali/services/whisper_specialist_models.dart';
 import 'package:malinali/services/whisper_speech_service.dart';
 import 'package:malinali/theme/malinali_chrome.dart';
 import 'package:malinali/widgets/voice_record_button.dart';
-import 'package:marian_flutter/marian_flutter.dart';
 
 /// Voice-first home: hold-to-record chat with speech → English → Marian.
 class VoiceChatPage extends StatefulWidget {
@@ -119,12 +117,6 @@ class _VoiceChatPageState extends State<VoiceChatPage> {
   }
 
   Future<void> _bootstrap() async {
-    try {
-      await MarianService.initRust();
-    } catch (_) {
-      // May already be initialized from boot.
-    }
-
     var prefs = widget.initialPrefs ?? await _prefsStore.load();
     if (prefs == null) {
       if (!mounted) return;
@@ -184,15 +176,9 @@ class _VoiceChatPageState extends State<VoiceChatPage> {
           },
         );
       }
-      // Preload only the first Marian hop. For Wolof→French that is wo→en;
-      // preloading en→fr left Candle + Whisper + wo→en in RAM and hung phones.
-      final preload = VoiceTurnPipeline.firstMarianHop(plan);
-      if (preload != null) {
-        setState(() => _status = 'Chargement ${preload.displayName}…');
-        final dir = await _modelService.downloadModel(preload);
-        final marian = await MarianService.loadFromDirectory(dir.path);
-        MarianRuntime.instance.attach(marian, preload);
-      }
+      // Whisper and the Marian hops for this pair. Recording stays off until
+      // both are on disk, so a missing translation pack is a download, not a
+      // turn that looks stuck.
       if (!mounted) return;
       setState(() {
         _ready = true;

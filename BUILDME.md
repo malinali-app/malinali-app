@@ -15,6 +15,13 @@ This writes `lib/generated/hf_token.g.dart` (XOR obfuscation — not real secret
 
 Create `secrets.txt` at the project root with two lines: database URL, then auth token. The file is gitignored.
 
+## publish onnx mariant mt
+
+HF_WRITE_TOKEN=$(tr -d '\r\n ' < hugging_face_malinali_secret.txt) \
+tools/export_marian_onnx/.venv/Scripts/python.exe tools/export_marian_onnx/export_marian_onnx.py \
+  --only fr-en-tiny,fr-en,en-fr,wo-en,en-wo,fr-wo \
+  --upload
+
 ## Publish french-fula Candle pack
 
 ```bash

@@ -53,7 +53,7 @@ class _VoiceSetupPageState extends State<VoiceSetupPage> {
       (p) => p.iso.toLowerCase() == _sourceIso.toLowerCase(),
       orElse: () => spoken.first,
     );
-    final isGeneric = selectedPack.ggmlUrl == 'builtin';
+    final isGeneric = selectedPack.builtin;
 
     final targets = getAvailableTargetLanguages(sourceIso: _sourceIso);
 
@@ -62,9 +62,11 @@ class _VoiceSetupPageState extends State<VoiceSetupPage> {
         title: const Text('Traduction vocale'),
         automaticallyImplyLeading: widget.initial != null,
       ),
-      body: ListView(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
-        children: [
+        child: Column(  
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Text(
             'Choisissez la langue parlée et la langue cible',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -134,7 +136,7 @@ class _VoiceSetupPageState extends State<VoiceSetupPage> {
             ),
             const SizedBox(height: 4),
             Text(
-              '250 Mo donne en général de meilleurs résultats.',
+              'Le modèle larger (environ 375 Mo) donne en général de meilleurs résultats.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: MalinaliChrome.mutedOnBlue,
                   ),
@@ -169,6 +171,6 @@ class _VoiceSetupPageState extends State<VoiceSetupPage> {
           ),
         ],
       ),
-    );
+    ));
   }
 }

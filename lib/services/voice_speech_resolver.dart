@@ -1,7 +1,6 @@
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/voice_preferences.dart';
 import 'package:malinali/services/whisper_specialist_models.dart';
-import 'package:whisper_ggml/whisper_ggml.dart';
 
 /// How speech reaches English for a voice turn.
 enum VoiceSpeechStrategy {
@@ -118,6 +117,25 @@ class VoiceSpeechResolver {
     }
 
     if (pack != null && pack.isDownloadable) {
+      final sourceToEnglish = curatedMarianForPair(
+        sourceIso: sourceIso,
+        targetIso: 'en',
+      );
+      if (sourceToEnglish != null) {
+        return VoiceSpeechPlan(
+          strategy: VoiceSpeechStrategy.transcribeThenMarianToEnglish,
+          whisperSize: prefs.whisperSize,
+          whisperLanguage: _whisperLanguage(sourceIso, pack),
+          specialist: pack,
+          sourceToEnglish: sourceToEnglish,
+          englishToTarget: englishToTarget,
+        );
+      }
+    }
+
+    // No specialist pack (e.g. French): still bridge through English when
+    // both hops exist. FR→WO uses this instead of the BLEU 9.3 direct model.
+    if (englishToTarget != null) {
       final sourceToEnglish = curatedMarianForPair(
         sourceIso: sourceIso,
         targetIso: 'en',

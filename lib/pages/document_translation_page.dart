@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:malinali/services/document_translation_service.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/theme/malinali_chrome.dart';
-import 'package:marian_flutter/marian_flutter.dart';
 import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
@@ -22,7 +21,7 @@ class DocumentTranslationPage extends StatefulWidget {
     this.translationService,
   });
 
-  final MarianService marian;
+  final TextTranslator marian;
   final TranslationModel model;
   final DocumentTranslationService? translationService;
 

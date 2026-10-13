@@ -7,23 +7,20 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:malinali/services/whisper_native.dart';
 import 'package:record/record.dart';
-import 'package:whisper_ggml/whisper_ggml.dart';
 
 import 'package:malinali/services/whisper_specialist_models.dart';
 
-/// On-device Whisper via whisper.cpp.
+/// On-device Whisper via sherpa-onnx.
 ///
 /// Default pack: multilingual tiny/small with `translate: true` (English out).
 /// Optional [WhisperSpecialistPack]: language fine-tune (transcribe or English out).
 class WhisperSpeechService {
   WhisperSpeechService({
-    WhisperController? controller,
     AudioRecorder? audioRecorder,
     AudioRecorder Function()? recorderFactory,
     Dio? dio,
     WhisperModel genericModel = WhisperModel.tiny,
-  })  : _controller = controller ?? WhisperController(),
-        _audioRecorder = audioRecorder,
+  })  : _audioRecorder = audioRecorder,
         _recorderFactory = recorderFactory,
         _dio = dio ?? Dio(),
         _genericModel = genericModel;
@@ -31,12 +28,16 @@ class WhisperSpeechService {
   /// Legacy alias for the compact pack.
   static const WhisperModel model = WhisperModel.tiny;
 
-  /// Hugging Face ggml tiny, fp16, about 75 MB.
-  static const String downloadSizeHint = 'environ 75 Mo';
+  static const String downloadSizeHint = 'environ 103 Mo';
 
-  static const String downloadSizeHintSmall = 'environ 250 Mo';
+  static const String downloadSizeHintSmall = 'environ 375 Mo';
 
-  final WhisperController _controller;
+  static const List<String> kOnnxFiles = [
+    'encoder.int8.onnx',
+    'decoder.int8.onnx',
+    'tokens.txt',
+  ];
+
   final Dio _dio;
   AudioRecorder? _audioRecorder;
   final AudioRecorder Function()? _recorderFactory;
@@ -74,11 +75,11 @@ class WhisperSpeechService {
         (_recorderFactory != null ? _recorderFactory() : AudioRecorder());
   }
 
-  Future<Directory> specialistStorageDirectory() async {
+  Future<Directory> _rootStorage() async {
     final docs = await getApplicationDocumentsDirectory();
     final String baseDir = Platform.isWindows
-        ? p.join(docs.path, 'Malinali_do_not_delete', 'whisper_specialists')
-        : p.join(docs.path, 'whisper_specialists');
+        ? p.join(docs.path, 'Malinali_do_not_delete', 'whisper_onnx')
+        : p.join(docs.path, 'whisper_onnx');
     final dir = Directory(baseDir);
     if (!dir.existsSync()) {
       dir.createSync(recursive: true);
@@ -86,16 +87,49 @@ class WhisperSpeechService {
     return dir;
   }
 
-  Future<String> specialistFilePath(WhisperSpecialistPack pack) async {
-    final dir = await specialistStorageDirectory();
-    return p.join(dir.path, pack.fileName);
+  Future<Directory> specialistStorageDirectory() async {
+    final root = await _rootStorage();
+    return Directory(p.join(root.path, 'specialists'));
   }
 
-  /// True when the active pack's ggml file is already on disk.
+  Future<String> specialistDirPath(WhisperSpecialistPack pack) async {
+    final dir = await specialistStorageDirectory();
+    return p.join(dir.path, pack.dirName);
+  }
+
+  /// Kept for tests that previously checked a single ggml file.
+  Future<String> specialistFilePath(WhisperSpecialistPack pack) async {
+    return p.join(await specialistDirPath(pack), 'encoder.int8.onnx');
+  }
+
+  Future<String> genericDirPath(WhisperModel model) async {
+    final root = await _rootStorage();
+    return p.join(root.path, 'generic', model.modelName);
+  }
+
+  bool _dirComplete(String dirPath) {
+    final dir = Directory(dirPath);
+    if (!dir.existsSync()) return false;
+    for (final name in kOnnxFiles) {
+      final f = File(p.join(dirPath, name));
+      if (!f.existsSync() || f.lengthSync() <= 0) return false;
+    }
+    return true;
+  }
+
+  WhisperOnnxPaths _pathsIn(String dirPath) {
+    return WhisperOnnxPaths(
+      encoder: p.join(dirPath, 'encoder.int8.onnx'),
+      decoder: p.join(dirPath, 'decoder.int8.onnx'),
+      tokens: p.join(dirPath, 'tokens.txt'),
+    );
+  }
+
+  /// True when the active pack's onnx files are already on disk.
   Future<bool> isModelPresent() async {
     try {
-      final path = await _activeModelPath();
-      final present = File(path).existsSync();
+      final dir = await _activeModelDir();
+      final present = _dirComplete(dir);
       _ready = present;
       return present;
     } catch (_) {
@@ -104,21 +138,18 @@ class WhisperSpeechService {
     }
   }
 
-  /// True when the active generic multilingual model is on disk.
   Future<bool> isTinyDownloaded() async {
-    return isGenericDownloaded(_genericModel);
+    return isGenericDownloaded(WhisperModel.tiny);
   }
 
   Future<bool> isGenericDownloaded(WhisperModel model) async {
     try {
-      final path = await _controller.getPath(model);
-      return File(path).existsSync();
+      return _dirComplete(await genericDirPath(model));
     } catch (_) {
       return false;
     }
   }
 
-  /// Switch the generic multilingual size (tiny / small). Clears specialist use.
   Future<void> setGenericModel(WhisperModel model) async {
     if (_genericModel == model && _specialist == null && _ready) return;
     if (_listening || _session != null) {
@@ -132,16 +163,14 @@ class WhisperSpeechService {
   }
 
   Future<bool> isSpecialistDownloaded(WhisperSpecialistPack pack) async {
-    if (!pack.isDownloadable) return false;
+    if (!pack.isDownloadable || pack.onnxRepo == null) return false;
     try {
-      final path = await specialistFilePath(pack);
-      return File(path).existsSync();
+      return _dirComplete(await specialistDirPath(pack));
     } catch (_) {
       return false;
     }
   }
 
-  /// Switch pack. Releases a parked native model when the path changes.
   Future<void> setActivePack(WhisperSpecialistPack? pack) async {
     if (pack != null && !pack.isDownloadable) {
       throw StateError(
@@ -160,22 +189,25 @@ class WhisperSpeechService {
     _ready = await isModelPresent();
   }
 
-  /// Download multilingual tiny if it is not already stored.
-  Future<String> ensureTinyModel() async {
-    return ensureGenericModel(WhisperModel.tiny);
+  Future<String> ensureTinyModel({
+    void Function(int received, int total)? onProgress,
+  }) async {
+    return ensureGenericModel(WhisperModel.tiny, onProgress);
   }
 
-  /// Download a generic multilingual ggml if it is not already stored.
-  Future<String> ensureGenericModel([WhisperModel? model]) async {
+  Future<String> ensureGenericModel([
+    WhisperModel? model,
+    void Function(int received, int total)? onProgress,
+  ]) async {
     final target = model ?? _genericModel;
-    final path = await _controller.downloadModel(target);
+    final dir = await genericDirPath(target);
+    await _downloadRepo(genericOnnxRepo(target), dir, onProgress: onProgress);
     if (_specialist == null && target == _genericModel) {
       _ready = true;
     }
-    return path;
+    return dir;
   }
 
-  /// Download the active pack (generic or specialist) if it is not already stored.
   Future<String> ensureModel() async {
     final specialist = _specialist;
     if (specialist == null) {
@@ -184,61 +216,82 @@ class WhisperSpeechService {
     return downloadSpecialist(specialist);
   }
 
-  /// Download a specialist ggml with Dio into app storage.
   Future<String> downloadSpecialist(
     WhisperSpecialistPack pack, {
     void Function(int received, int total)? onProgress,
   }) async {
-    if (!pack.isDownloadable) {
+    if (!pack.isDownloadable || pack.onnxRepo == null) {
       throw StateError(
         pack.statusReason ?? 'Ce modèle Whisper n\'est pas disponible.',
       );
     }
-    final path = await specialistFilePath(pack);
-    final file = File(path);
-    if (file.existsSync() && await file.length() > 0) {
-      if (_specialist?.id == pack.id) {
-        _ready = true;
-      }
-      return path;
+    final dir = await specialistDirPath(pack);
+    await _downloadRepo(pack.onnxRepo!, dir, onProgress: onProgress);
+    if (_specialist?.id == pack.id) {
+      _ready = true;
     }
+    return dir;
+  }
 
-    final tmp = File('$path.partial');
-    try {
-      await _dio.download(
-        pack.ggmlUrl!,
-        tmp.path,
-        onReceiveProgress: onProgress,
-      );
-      if (file.existsSync()) {
-        try {
-          file.deleteSync();
-        } catch (_) {}
+  Future<void> _downloadRepo(
+    WhisperOnnxRepo repo,
+    String dirPath, {
+    void Function(int received, int total)? onProgress,
+  }) async {
+    final dir = Directory(dirPath);
+    if (!dir.existsSync()) {
+      dir.createSync(recursive: true);
+    }
+    if (_dirComplete(dirPath)) return;
+
+    var done = 0;
+    final files = repo.files;
+    for (final name in files) {
+      final dest = File(p.join(dirPath, name));
+      if (dest.existsSync() && dest.lengthSync() > 0) {
+        done++;
+        onProgress?.call(done * 1000, files.length * 1000);
+        continue;
       }
-      await tmp.rename(path);
-      if (_specialist?.id == pack.id) {
-        _ready = true;
+      final tmp = File('${dest.path}.partial');
+      try {
+        await _dio.download(
+          repo.urlFor(name),
+          tmp.path,
+          onReceiveProgress: onProgress == null
+              ? null
+              : (recv, total) {
+                  final int fileProgress = (total > 0) ? (recv * 1000 ~/ total) : 0;
+                  onProgress(done * 1000 + fileProgress, files.length * 1000);
+                },
+        );
+        if (dest.existsSync()) {
+          try {
+            dest.deleteSync();
+          } catch (_) {}
+        }
+        await tmp.rename(dest.path);
+        done++;
+        onProgress?.call(done * 1000, files.length * 1000);
+      } catch (_) {
+        if (tmp.existsSync()) {
+          try {
+            tmp.deleteSync();
+          } catch (_) {}
+        }
+        rethrow;
       }
-      return path;
-    } catch (e) {
-      if (tmp.existsSync()) {
-        try {
-          tmp.deleteSync();
-        } catch (_) {}
-      }
-      rethrow;
     }
   }
 
-  Future<String> _activeModelPath() async {
+  Future<String> _activeModelDir() async {
     final specialist = _specialist;
     if (specialist == null) {
-      return _controller.getPath(_genericModel);
+      return genericDirPath(_genericModel);
     }
-    return specialistFilePath(specialist);
+    return specialistDirPath(specialist);
   }
 
-  /// Drop a model held by `keep_model_loaded` (frees RAM before Marian).
   Future<void> releaseParkedModel() => _releaseParkedModel();
 
   Future<void> _releaseParkedModel() async {
@@ -247,10 +300,6 @@ class WhisperSpeechService {
     } catch (_) {}
   }
 
-  /// Start the microphone.
-  ///
-  /// Default pack: partials and final line are English.
-  /// Specialist pack: transcript in the fine-tuned language.
   Future<void> startListening() async {
     if (_listening) return;
     if (!_ready) {
@@ -262,19 +311,16 @@ class WhisperSpeechService {
       throw Exception('Microphone permission not granted');
     }
 
-    final modelPath = (await _activeModelPath()).replaceAll('/', p.separator).replaceAll('\\', p.separator);
-    final specialist = _specialist;
-    
-    if (!File(modelPath).existsSync()) {
-      throw Exception('Model file not found: $modelPath');
+    final dir = await _activeModelDir();
+    if (!_dirComplete(dir)) {
+      throw Exception('Model files not found in $dir');
     }
 
+    final specialist = _specialist;
     final session = await startMalinaliWhisperLiveSession(
-      modelPath: modelPath,
+      model: _pathsIn(dir),
       lang: _languageFor(specialist),
       translate: _translateFor(specialist),
-      suppressNonSpeechTokens: true,
-      keepModelLoaded: true,
     );
     _session = session;
     _partialSub = session.partials.listen(
@@ -306,7 +352,6 @@ class WhisperSpeechService {
     );
   }
 
-  /// Stop the microphone and return the transcript.
   Future<String> stopListening() async {
     if (!_listening && _session == null) return '';
     _listening = false;
@@ -331,25 +376,20 @@ class WhisperSpeechService {
     }
   }
 
-  /// Transcribe a 16 kHz mono WAV (or any file whisper.cpp can open).
-  ///
-  /// [language] and [translate] override the active pack. Callers that know
-  /// the spoken language must pass them: a null pack used to send `auto`
-  /// plus translate-to-English, and Whisper then labeled Wolof as English.
   Future<String> transcribeWav(
     String audioPath, {
     void Function(int percent)? onProgress,
     String? language,
     bool? translate,
   }) async {
-    final modelPath = await ensureModel();
+    final dir = await ensureModel();
     final specialist = _specialist;
     final lang = _languageFor(specialist, override: language);
     final toEnglish = _translateFor(specialist, override: translate);
     onProgress?.call(0);
     final response = await whisperTranscribeWav(
       wavPath: audioPath,
-      modelPath: modelPath,
+      model: _pathsIn(dir),
       language: lang,
       translate: toEnglish,
     );
@@ -361,8 +401,6 @@ class WhisperSpeechService {
     return text.trim();
   }
 
-  /// whisper.cpp language token. An explicit [override] wins, including when
-  /// the active pack is still null.
   String _languageFor(WhisperSpecialistPack? specialist, {String? override}) {
     final requested = (override ?? specialist?.whisperLang ?? 'auto').trim();
     if (requested.isEmpty) return 'auto';

@@ -7,12 +7,10 @@ import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/whisper_specialist_models.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:whisper_ggml/whisper_ggml.dart';
-
 /// Generic multilingual Whisper size offered at first launch (no brand name).
 enum VoiceWhisperSize {
-  compact(WhisperModel.tiny, 'environ 75 Mo'),
-  quality(WhisperModel.small, 'environ 250 Mo');
+  compact(WhisperModel.tiny, 'environ 103 Mo'),
+  quality(WhisperModel.small, 'environ 375 Mo');
 
   const VoiceWhisperSize(this.model, this.sizeHintFr);
 
@@ -100,7 +98,7 @@ List<WhisperSpecialistPack> voiceSpokenLanguagePacks() {
       downloadSizeHint: 'Modèle de base',
       hasMarianOutbound: true,
       upstreamRepo: 'openai/whisper',
-      ggmlUrl: 'builtin',
+      builtin: true,
     ),
     const WhisperSpecialistPack(
       id: 'generic-fr',
@@ -110,7 +108,7 @@ List<WhisperSpecialistPack> voiceSpokenLanguagePacks() {
       downloadSizeHint: 'Modèle de base',
       hasMarianOutbound: true,
       upstreamRepo: 'openai/whisper',
-      ggmlUrl: 'builtin',
+      builtin: true,
     ),
   ];
   out.addAll(kWhisperSpecialistPacks.where((p) => p.isDownloadable));
@@ -131,12 +129,50 @@ Language? voiceLanguageByIso(String iso) {
   }
 }
 
+/// Voice hops: ONNX twin of a Candle / Xenova pack when we have one.
+TranslationModel voiceOnnxHop(TranslationModel model) {
+  const twins = <String, String>{
+    'Xenova/opus-mt-en-fr': 'malinali-app/opus-mt-en-fr-onnx',
+    'Helsinki-NLP/opus-mt-en-fr': 'malinali-app/opus-mt-en-fr-onnx',
+    'Xenova/opus-mt-fr-en': 'malinali-app/opus-mt_tiny_fra-eng-onnx',
+    'Helsinki-NLP/opus-mt-fr-en': 'malinali-app/opus-mt_tiny_fra-eng-onnx',
+    'Helsinki-NLP/opus-mt_tiny_fra-eng':
+        'malinali-app/opus-mt_tiny_fra-eng-onnx',
+    'malinali-app/traduction-wolof-en':
+        'malinali-app/traduction-wolof-en-onnx',
+    'malinali-app/traduction-en-wolof':
+        'malinali-app/traduction-en-wolof-onnx',
+  };
+  final onnxId = twins[model.modelId];
+  if (onnxId == null) return model;
+  return TranslationModel(
+    sourceLang: model.sourceLang,
+    targetLang: model.targetLang,
+    modelId: onnxId,
+    downloadSizeHint: onnxId.contains('tiny') ? '~35 Mo' : '~140 Mo',
+    qualityHint: model.qualityHint,
+    sourcePrefix: model.sourcePrefix,
+  );
+}
+
 /// Pinned English → French Marian pack (not in the African catalogue).
-final TranslationModel kPinnedEnFrModel = TranslationModel(
-  sourceLang: Languages.english,
-  targetLang: Languages.french,
-  modelId: 'Xenova/opus-mt-en-fr',
-  downloadSizeHint: '~75–150 Mo',
+final TranslationModel kPinnedEnFrModel = voiceOnnxHop(
+  TranslationModel(
+    sourceLang: Languages.english,
+    targetLang: Languages.french,
+    modelId: 'Xenova/opus-mt-en-fr',
+    downloadSizeHint: '~75–150 Mo',
+  ),
+);
+
+/// Pinned French → English hop for the Wolof cascade (and FR→EN voice).
+final TranslationModel kPinnedFrEnModel = voiceOnnxHop(
+  TranslationModel(
+    sourceLang: Languages.french,
+    targetLang: Languages.english,
+    modelId: 'Xenova/opus-mt-fr-en',
+    downloadSizeHint: '~75–150 Mo',
+  ),
 );
 
 /// Raw English target (no further Marian translation after speech → English).
@@ -169,8 +205,9 @@ List<TranslationModel> voiceEnglishTargetModels() {
     if (model.sourceLang.localeIntl.locale.languageCode.toLowerCase() != 'en') {
       continue;
     }
-    if (out.any((m) => m.modelId == model.modelId)) continue;
-    out.add(model);
+    final hop = voiceOnnxHop(model);
+    if (out.any((m) => m.modelId == hop.modelId)) continue;
+    out.add(hop);
   }
   // Stable order: French first, then alpha by display name.
   out.sort((a, b) {
@@ -194,6 +231,7 @@ TranslationModel? curatedMarianForPair({
   final src = sourceIso.toLowerCase();
   final tgt = targetIso.toLowerCase();
   if (src == 'en' && tgt == 'fr') return kPinnedEnFrModel;
+  if (src == 'fr' && tgt == 'en') return kPinnedFrEnModel;
   for (final pair in kAfricanHelsinkiOpusPairs) {
     if (pair.sourceIso == src && pair.targetIso == tgt) {
       final source = voiceLanguageByIso(pair.sourceIso);
@@ -211,7 +249,11 @@ TranslationModel? curatedMarianForPair({
   for (final model in TranslationModelService.candleFineTunes) {
     final mSrc = model.sourceLang.localeIntl.locale.languageCode.toLowerCase();
     final mTgt = model.targetLang.localeIntl.locale.languageCode.toLowerCase();
-    if (mSrc == src && mTgt == tgt) return model;
+    if (mSrc == src && mTgt == tgt) {
+      // Direct FR→WO is BLEU 9.3; voice/auto routing uses FR→EN→WO instead.
+      if (model.modelId == 'malinali-app/traduction-fr-wolof') continue;
+      return voiceOnnxHop(model);
+    }
   }
   return null;
 }

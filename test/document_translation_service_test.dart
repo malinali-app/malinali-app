@@ -1,19 +1,39 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:malinali/services/document_translation_service.dart';
-import 'package:marian_flutter/marian_flutter.dart';
-import 'package:mockito/annotations.dart';
-import 'package:mockito/mockito.dart';
+import 'package:malinali/services/text_translator.dart';
 
-import 'document_translation_service_test.mocks.dart';
+class _FakeTranslator implements TextTranslator {
+  _FakeTranslator({this.handler, this.throwOnTranslate});
 
-@GenerateMocks([MarianService])
+  final String Function(String text)? handler;
+  final Object? throwOnTranslate;
+  final List<String> calls = [];
+  DecodeConfig? lastConfig;
+
+  @override
+  Future<String> translate(
+    String text, {
+    DecodeConfig config = kStreetDecodeConfig,
+  }) async {
+    if (throwOnTranslate != null) {
+      throw throwOnTranslate!;
+    }
+    calls.add(text);
+    lastConfig = config;
+    return handler?.call(text) ?? 'TR:$text';
+  }
+
+  @override
+  void dispose() {}
+}
+
 void main() {
   late DocumentTranslationService service;
-  late MockMarianService mockMarian;
+  late _FakeTranslator mockMarian;
 
   setUp(() {
     service = DocumentTranslationService(maxChunkChars: 40);
-    mockMarian = MockMarianService();
+    mockMarian = _FakeTranslator();
   });
 
   group('chunkText', () {
@@ -77,19 +97,10 @@ void main() {
       expect(result.text, isEmpty);
       expect(result.chunkCount, 0);
       expect(result.cancelled, isFalse);
-      verifyNever(
-        mockMarian.translate(any, config: anyNamed('config')),
-      );
+      expect(mockMarian.calls, isEmpty);
     });
 
     test('translates chunks sequentially and joins with blank lines', () async {
-      when(
-        mockMarian.translate(any, config: anyNamed('config')),
-      ).thenAnswer((invocation) async {
-        final text = invocation.positionalArguments[0] as String;
-        return 'TR:$text';
-      });
-
       const source = 'Alpha.\n\nBeta.';
       final progresses = <DocumentTranslationProgress>[];
 
@@ -112,23 +123,11 @@ void main() {
           totalChunks: 2,
         ),
       ]);
-      verify(
-        mockMarian.translate('Alpha.', config: kDocumentTranslationConfig),
-      ).called(1);
-      verify(
-        mockMarian.translate('Beta.', config: kDocumentTranslationConfig),
-      ).called(1);
-      verifyNoMoreInteractions(mockMarian);
+      expect(mockMarian.calls, ['Alpha.', 'Beta.']);
+      expect(mockMarian.lastConfig, kDocumentTranslationConfig);
     });
 
     test('prepareSource prefixes each chunk before Marian', () async {
-      when(
-        mockMarian.translate(any, config: anyNamed('config')),
-      ).thenAnswer((invocation) async {
-        final text = invocation.positionalArguments[0] as String;
-        return 'TR:$text';
-      });
-
       final result = await service.translateDocument(
         sourceText: 'Alpha.\n\nBeta.',
         marian: mockMarian,
@@ -136,30 +135,16 @@ void main() {
       );
 
       expect(result.text, 'TR:>>wol<< Alpha.\n\nTR:>>wol<< Beta.');
-      verify(
-        mockMarian.translate(
-          '>>wol<< Alpha.',
-          config: kDocumentTranslationConfig,
-        ),
-      ).called(1);
-      verify(
-        mockMarian.translate(
-          '>>wol<< Beta.',
-          config: kDocumentTranslationConfig,
-        ),
-      ).called(1);
+      expect(mockMarian.calls, ['>>wol<< Alpha.', '>>wol<< Beta.']);
     });
 
-    test('uses provided TranslationConfig', () async {
-      const custom = TranslationConfig(
+    test('uses provided DecodeConfig', () async {
+      const custom = DecodeConfig(
         numBeams: 1,
         maxNewTokens: 64,
         lengthPenalty: 1.0,
         noRepeatNgramSize: 0,
       );
-      when(
-        mockMarian.translate(any, config: anyNamed('config')),
-      ).thenAnswer((_) async => 'ok');
 
       await service.translateDocument(
         sourceText: 'Hello.',
@@ -167,25 +152,17 @@ void main() {
         config: custom,
       );
 
-      verify(mockMarian.translate('Hello.', config: custom)).called(1);
+      expect(mockMarian.calls, ['Hello.']);
+      expect(mockMarian.lastConfig, custom);
     });
 
     test('cancels between chunks and keeps partial output', () async {
-      var calls = 0;
-      when(
-        mockMarian.translate(any, config: anyNamed('config')),
-      ).thenAnswer((invocation) async {
-        calls++;
-        final text = invocation.positionalArguments[0] as String;
-        return 'TR:$text';
-      });
-
       final progresses = <DocumentTranslationProgress>[];
       final result = await service.translateDocument(
         sourceText: 'One.\n\nTwo.\n\nThree.',
         marian: mockMarian,
         onProgress: progresses.add,
-        isCancelled: () => calls >= 1,
+        isCancelled: () => mockMarian.calls.length >= 1,
       );
 
       expect(result.cancelled, isTrue);
@@ -199,15 +176,11 @@ void main() {
           cancelled: true,
         ),
       );
-      verify(
-        mockMarian.translate(any, config: anyNamed('config')),
-      ).called(1);
+      expect(mockMarian.calls, ['One.']);
     });
 
     test('propagates Marian errors from a chunk', () async {
-      when(
-        mockMarian.translate(any, config: anyNamed('config')),
-      ).thenThrow(Exception('candle boom'));
+      mockMarian = _FakeTranslator(throwOnTranslate: Exception('candle boom'));
 
       await expectLater(
         service.translateDocument(

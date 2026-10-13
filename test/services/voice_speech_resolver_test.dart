@@ -18,8 +18,8 @@ void main() {
     expect(plan.specialist?.id, 'wolof-small');
     expect(plan.whisperLanguage, 'en');
     expect(plan.translateToEnglish, isFalse);
-    expect(plan.sourceToEnglish?.modelId, 'malinali-app/traduction-wolof-en');
-    expect(plan.englishToTarget?.modelId, 'Xenova/opus-mt-en-fr');
+    expect(plan.sourceToEnglish?.modelId, 'malinali-app/traduction-wolof-en-onnx');
+    expect(plan.englishToTarget?.modelId, 'malinali-app/opus-mt-en-fr-onnx');
     expect(plan.genericModel.modelName, 'small');
   });
 
@@ -64,10 +64,10 @@ void main() {
     expect(plan.strategy, VoiceSpeechStrategy.directTranslate);
     expect(plan.specialist?.id, 'wolof-small');
     expect(plan.whisperLanguage, 'en');
-    expect(plan.sourceToEnglish?.modelId, 'malinali-app/traduction-wolof-en');
+    expect(plan.sourceToEnglish?.modelId, 'malinali-app/traduction-wolof-en-onnx');
     expect(plan.englishToTarget, isNull);
     expect(plan.marianDownloads.map((m) => m.modelId), [
-      'malinali-app/traduction-wolof-en',
+      'malinali-app/traduction-wolof-en-onnx',
     ]);
   });
 
@@ -98,14 +98,38 @@ void main() {
 
   test('pinned en→fr is first among voice English targets', () {
     final targets = voiceEnglishTargetModels();
-    expect(targets.first.modelId, 'Xenova/opus-mt-en-fr');
+    expect(targets.first.modelId, 'malinali-app/opus-mt-en-fr-onnx');
     expect(
-      targets.any((m) => m.modelId == 'malinali-app/traduction-en-wolof'),
+      targets.any((m) => m.modelId == 'malinali-app/traduction-en-wolof-onnx'),
       isTrue,
     );
   });
 
-  test('Wolof target uses English→Wolof candle fine-tune', () {
+  test('French to Wolof cascades fr→en then LocaleNLP eng_wolof', () {
+    final plan = resolver.resolve(
+      const VoicePreferences(
+        sourceIso: 'fr',
+        targetIso: 'wo',
+        whisperSize: VoiceWhisperSize.quality,
+      ),
+    );
+    expect(plan.strategy, VoiceSpeechStrategy.transcribeThenMarianToEnglish);
+    expect(plan.specialist, isNull);
+    expect(plan.whisperLanguage, 'fr');
+    expect(plan.translateToEnglish, isFalse);
+    expect(plan.sourceToEnglish?.modelId, 'malinali-app/opus-mt_tiny_fra-eng-onnx');
+    expect(plan.englishToTarget?.modelId, 'malinali-app/traduction-en-wolof-onnx');
+    expect(
+      plan.englishToTarget?.sourcePrefix,
+      TranslationModelService.kEngWolofSourcePrefix,
+    );
+    expect(plan.marianDownloads.map((m) => m.modelId), [
+      'malinali-app/opus-mt_tiny_fra-eng-onnx',
+      'malinali-app/traduction-en-wolof-onnx',
+    ]);
+  });
+
+  test('Wolof target uses English→Wolof ONNX fine-tune', () {
     final plan = resolver.resolve(
       const VoicePreferences(
         sourceIso: 'yo',
@@ -113,7 +137,7 @@ void main() {
         whisperSize: VoiceWhisperSize.quality,
       ),
     );
-    expect(plan.englishToTarget?.modelId, 'malinali-app/traduction-en-wolof');
+    expect(plan.englishToTarget?.modelId, 'malinali-app/traduction-en-wolof-onnx');
     expect(
       plan.englishToTarget?.sourcePrefix,
       TranslationModelService.kEngWolofSourcePrefix,

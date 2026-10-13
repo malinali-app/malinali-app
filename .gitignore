@@ -90,3 +90,9 @@ tool/publish_african_candle.py
 /Malinali_do_not_delete
 /hf_download.txt
 /secret_cw.txt
+android/build/reports/problems/problems-report.html
+tool/export_marian_onnx/export_marian_onnx.py
+tool/export_marian_onnx/models.py
+tool/export_marian_onnx/requirements.txt
+/native/marian_onnx/build
+/native/marian_onnx/build_dll

@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:malinali/services/text_translator.dart';
 import 'package:malinali/services/translation_model_service.dart';
-import 'package:marian_flutter/marian_flutter.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -14,21 +14,25 @@ class MarianRuntime {
   MarianRuntime._();
   static final MarianRuntime instance = MarianRuntime._();
 
-  MarianService? _marian;
+  TextTranslator? _translator;
   TranslationModel? _model;
 
-  MarianService? get marian => _marian;
+  TextTranslator? get translator => _translator;
   TranslationModel? get model => _model;
 
-  bool get isReady => _marian != null && _model != null;
+  bool get isReady => _translator != null && _model != null;
 
-  void attach(MarianService marian, TranslationModel model) {
-    _marian = marian;
+  void attach(TextTranslator translator, TranslationModel model) {
+    if (!identical(_translator, translator)) {
+      _translator?.dispose();
+    }
+    _translator = translator;
     _model = model;
   }
 
   void clear() {
-    _marian = null;
+    _translator?.dispose();
+    _translator = null;
     _model = null;
   }
 
@@ -67,12 +71,18 @@ class MarianRuntime {
   ) async {
     final last = await loadLastSelectedModel();
     if (last != null) {
+      // Previous default was Candle tiny; move boot to the ONNX pack.
+      if (last.modelId == TranslationModelService.candleBootModel.modelId) {
+        return TranslationModelService.onnxBootModel;
+      }
       if (last.isAsset || await modelService.isModelDownloaded(last)) {
         return last;
       }
       // Match known catalog entries (private / boot) by id if JSON was sparse.
       for (final known in [
         TranslationModelService.defaultBootModel,
+        TranslationModelService.onnxBootModel,
+        TranslationModelService.candleBootModel,
         ...TranslationModelService.privateModels,
         ...TranslationModelService.candleFineTunes,
       ]) {

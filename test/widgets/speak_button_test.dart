@@ -6,9 +6,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:malinali/pages/translate_page.dart';
+import 'package:malinali/services/text_translator.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:languages_dart/languages_dart.dart';
-import 'package:marian_flutter/marian_flutter.dart';
 
 import '../translate_page_test.mocks.dart';
 
@@ -69,7 +69,7 @@ void main() {
     await tester.runAsync(() async {
       await tester.pumpWidget(MaterialApp(
         home: TranslatePage(
-          initialMarian: mockMarian,
+          initialMarian: CandleTextTranslator(mockMarian),
           initialModel: model,
           modelService: mockModelService,
         ),

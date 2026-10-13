@@ -212,13 +212,33 @@ void main() {
       });
       expect(restored, isNotNull);
       expect(restored!.sourcePrefix, TranslationModelService.kEngWolofSourcePrefix);
+
+      final restoredOnnx = TranslationModel.fromPreferenceJson({
+        'modelId': 'malinali-app/traduction-en-wolof-onnx',
+        'sourceIso': 'en',
+        'targetIso': 'wo',
+        'sourceName': 'English',
+        'targetName': 'Wolof',
+      });
+      expect(restoredOnnx, isNotNull);
+      expect(
+        restoredOnnx!.sourcePrefix,
+        TranslationModelService.kEngWolofSourcePrefix,
+      );
     });
 
-    test('boot default is public tiny Helsinki FR→EN', () {
+    test('boot default is ONNX tiny FR→EN (no Candle at launch)', () {
       final boot = TranslationModelService.defaultBootModel;
-      expect(boot.modelId, 'Helsinki-NLP/opus-mt_tiny_fra-eng');
       expect(boot.isAsset, isFalse);
       expect(boot.requiresAuth, isFalse);
+      expect(boot.modelId, 'malinali-app/opus-mt_tiny_fra-eng-onnx');
+      expect(boot.isOnnx, isTrue);
+      expect(boot.downloadSizeHint, '~35 Mo');
+    });
+
+    test('ONNX model ids end with -onnx', () {
+      expect(TranslationModelService.onnxBootModel.isOnnx, isTrue);
+      expect(TranslationModelService.candleBootModel.isOnnx, isFalse);
     });
 
     test('curated African Helsinki bilaterals include Hausa/Yoruba with BLEU hints', () {

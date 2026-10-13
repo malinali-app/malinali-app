@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:malinali/services/marian_runtime.dart';
+import 'package:malinali/services/text_translator.dart';
 import 'package:malinali/services/translation_model_service.dart';
 
 import 'translate_page_test.mocks.dart';
@@ -13,17 +14,17 @@ void main() {
     final runtime = MarianRuntime.instance;
     expect(runtime.isReady, isFalse);
 
-    final marian = MockMarianService();
+    final translator = CandleTextTranslator(MockMarianService());
     final model = TranslationModelService.defaultBootModel;
-    runtime.attach(marian, model);
+    runtime.attach(translator, model);
 
     expect(runtime.isReady, isTrue);
-    expect(runtime.marian, same(marian));
+    expect(runtime.translator, same(translator));
     expect(runtime.model?.modelId, model.modelId);
 
     runtime.clear();
     expect(runtime.isReady, isFalse);
-    expect(runtime.marian, isNull);
+    expect(runtime.translator, isNull);
     expect(runtime.model, isNull);
   });
 }

@@ -57,17 +57,19 @@ void main() {
     }
   });
 
-  test('downloadSpecialist writes ggml file under whisper_specialists', () async {
+  test('downloadSpecialist writes onnx files under whisper_onnx', () async {
     final dio = Dio();
     dio.httpClientAdapter = _FakeAdapter(List<int>.filled(32, 7));
     final service = WhisperSpeechService(dio: dio);
     final pack = whisperSpecialistById('yoruba-small')!;
 
     expect(await service.isSpecialistDownloaded(pack), isFalse);
-    final path = await service.downloadSpecialist(pack);
-    expect(File(path).existsSync(), isTrue);
-    expect(await File(path).length(), 32);
-    expect(p.basename(path), 'yoruba-small.bin');
+    final dir = await service.downloadSpecialist(pack);
+    expect(Directory(dir).existsSync(), isTrue);
+    expect(File(p.join(dir, 'encoder.int8.onnx')).existsSync(), isTrue);
+    expect(File(p.join(dir, 'decoder.int8.onnx')).existsSync(), isTrue);
+    expect(File(p.join(dir, 'tokens.txt')).existsSync(), isTrue);
+    expect(p.basename(dir), 'yoruba-small');
     expect(await service.isSpecialistDownloaded(pack), isTrue);
   });
 

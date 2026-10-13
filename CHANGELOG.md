@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.9 - 12 octobre 2026
+
+- feat: whisper onnx through sherpa_onnx
+  - Whisper ONNX generic packs via sherpa-onnx (not whisper.cpp):
+    [`malinali-app/whisper-tiny-onnx`](https://huggingface.co/malinali-app/whisper-tiny-onnx) (~103 Mo),
+    [`malinali-app/whisper-small-onnx`](https://huggingface.co/malinali-app/whisper-small-onnx) (~375 Mo)
+- feat: marianMT onnx through self-made package 
+  - No Candle at launch. Voice home downloads Whisper only; Marian ONNX loads on first turn
+  - Voice FR/EN/Wolof hops use ONNX ids (`opus-mt_tiny_fra-eng-onnx`, `opus-mt-en-fr-onnx`, `traduction-*-onnx`)
+  - Android NDK `libmarian_onnx.so` (ORT AAR). Candle stays for written catalog / BYO
+  - Windows/Android boot translator: [`malinali-app/opus-mt_tiny_fra-eng-onnx`](https://huggingface.co/malinali-app/opus-mt_tiny_fra-eng-onnx)
+  - MarianMT ONNX native adapter: later `decoder_with_past` steps do not send `encoder_hidden_states`; encoder KVs stay in the past map
+
 ## 1.1.5 & 1.1.6 - 3 octobre 2026
 
 - added aptabase

@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:malinali/pages/onboarding_page.dart';
 import 'package:malinali/pages/voice_chat_page.dart';
-import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/voice_preferences.dart';
 import 'package:malinali/theme/malinali_chrome.dart';
-import 'package:marian_flutter/marian_flutter.dart';
 
 class MalinaliApp extends StatelessWidget {
   const MalinaliApp({super.key});
@@ -20,7 +18,7 @@ class MalinaliApp extends StatelessWidget {
   }
 }
 
-/// Inits Rust once, then opens the app home.
+/// Opens onboarding or the voice home. Does not load Candle or Marian.
 class MarianBootScreen extends StatefulWidget {
   const MarianBootScreen({super.key});
 
@@ -55,10 +53,9 @@ class _MarianBootScreenState extends State<MarianBootScreen> {
   Future<void> _boot() async {
     try {
       setState(() {
-        _status = 'Initialisation…';
+        _status = 'Démarrage…';
         _error = null;
       });
-      await MarianService.initRust();
 
       if (!mounted) return;
       final prefs = await _prefsStore.load();

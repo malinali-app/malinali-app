@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:languages_dart/languages_dart.dart';
 import 'package:malinali/generated/hf_token.g.dart';
+import 'package:malinali/onnx_marian/model_dir.dart';
 import 'package:malinali/services/african_helsinki_models.dart';
 
 class TranslationModel {
@@ -26,6 +27,9 @@ class TranslationModel {
   final String? qualityHint;
   /// Prepended to source text before Marian encode (e.g. `>>wol<< ` for en-mul).
   final String? sourcePrefix;
+
+  /// Optimum ONNX pack (`encoder_model.onnx` + `decoder_with_past_model.onnx`).
+  bool get isOnnx => modelId.toLowerCase().endsWith('-onnx');
 
   TranslationModel({
     required this.sourceLang,
@@ -154,7 +158,9 @@ class TranslationModel {
 
   static String? _catalogueSourcePrefixFor(String modelId) {
     for (final known in TranslationModelService.candleFineTunes) {
-      if (known.modelId == modelId) return known.sourcePrefix;
+      if (known.modelId == modelId || '${known.modelId}-onnx' == modelId) {
+        return known.sourcePrefix;
+      }
     }
     return null;
   }
@@ -164,13 +170,24 @@ class TranslationModelService {
   final Dio _dio = Dio();
   static const String _xenovaAuthor = 'Xenova';
 
-  /// Boot default: tiny public Helsinki FR→EN (25M params).
-  static final TranslationModel defaultBootModel = TranslationModel(
+  /// Candle tiny public Helsinki FR→EN (25M params). Used off Windows.
+  static final TranslationModel candleBootModel = TranslationModel(
     sourceLang: Languages.french,
     targetLang: Languages.english,
     modelId: 'Helsinki-NLP/opus-mt_tiny_fra-eng',
     downloadSizeHint: '~75 Mo',
   );
+
+  /// Published Optimum ONNX pack for the native decoder (UINT8 + merged).
+  static final TranslationModel onnxBootModel = TranslationModel(
+    sourceLang: Languages.french,
+    targetLang: Languages.english,
+    modelId: 'malinali-app/opus-mt_tiny_fra-eng-onnx',
+    downloadSizeHint: '~35 Mo',
+  );
+
+  /// Boot / written default: ONNX tiny FR→EN (Candle is on-demand only).
+  static TranslationModel get defaultBootModel => onnxBootModel;
 
   /// Pre-defined private models (MOAT) — downloaded on demand from HF.
   static final List<TranslationModel> privateModels = [
@@ -204,7 +221,8 @@ class TranslationModelService {
       ),
       modelId: 'malinali-app/traduction-fr-wolof',
       downloadSizeHint: '~285 Mo',
-      // Best trainer eval_bleu is 9.32 (epoch 18); shown like the OPUS tiles.
+      // Direct fine-tune is weak (eval_bleu 9.32). Voice/auto routing skips
+      // this pack and cascades FR→EN then LocaleNLP eng_wolof (>>wol<<).
       qualityHint: formatOpusBleuHint('BLEU 9.3'),
     ),
     TranslationModel(
@@ -658,6 +676,29 @@ class TranslationModelService {
     try {
       final modelDir = await modelDirectory(model);
       if (!await modelDir.exists()) return false;
+
+      if (model.isOnnx) {
+        final mergedFile = File(
+          p.join(modelDir.path, kMarianOnnxMergedDecoderFile),
+        );
+        final hasMerged =
+            await mergedFile.exists() && await mergedFile.length() > 0;
+        // Official malinali-app ONNX packs ship decoder_model_merged.onnx
+        // (UINT8); require it so devices with legacy FP32 3-file caches upgrade.
+        if (model.modelId.startsWith('malinali-app/') && !hasMerged) {
+          return false;
+        }
+        for (final name in kMarianOnnxRequiredFiles) {
+          if (hasMerged &&
+              (name == 'decoder_model.onnx' ||
+                  name == 'decoder_with_past_model.onnx')) {
+            continue;
+          }
+          final file = File(p.join(modelDir.path, name));
+          if (!await file.exists() || await file.length() == 0) return false;
+        }
+        return true;
+      }
       
       final mainFile = File(p.join(modelDir.path, 'model.safetensors'));
       if (!await mainFile.exists() || await mainFile.length() == 0) return false;
@@ -691,6 +732,10 @@ class TranslationModelService {
 
     if (!await modelDir.exists()) {
       await modelDir.create(recursive: true);
+    }
+
+    if (model.isOnnx) {
+      return _downloadOnnxPack(model, modelDir, onProgress: onProgress);
     }
 
     // 1. Core weights and config
@@ -835,6 +880,67 @@ class TranslationModelService {
       }
     }
     return false;
+  }
+
+  Future<Directory> _downloadOnnxPack(
+    TranslationModel model,
+    Directory modelDir, {
+    void Function(int received, int total)? onProgress,
+  }) async {
+    final mergedFile = File(p.join(modelDir.path, kMarianOnnxMergedDecoderFile));
+    final hadMergedBefore =
+        await mergedFile.exists() && await mergedFile.length() > 0;
+    bool hasMerged = hadMergedBefore;
+    try {
+      await _downloadOneFile(
+        model.modelId,
+        modelDir,
+        kMarianOnnxMergedDecoderFile,
+        requiresAuth: model.requiresAuth,
+        authToken: model.authToken,
+        onProgress: onProgress,
+      );
+      hasMerged = true;
+    } on DioException catch (e) {
+      if (e.response?.statusCode != 404) rethrow;
+    }
+
+    // If we just upgraded a legacy FP32 3-file directory to merged UINT8,
+    // remove the old FP32 encoder and split decoders so encoder_model.onnx
+    // is refreshed to UINT8 and ~700 Mo of split decoders are reclaimed.
+    if (hasMerged && !hadMergedBefore) {
+      for (final legacy in const [
+        'encoder_model.onnx',
+        'decoder_model.onnx',
+        'decoder_with_past_model.onnx',
+      ]) {
+        final f = File(p.join(modelDir.path, legacy));
+        if (await f.exists()) {
+          try {
+            await f.delete();
+          } catch (_) {}
+        }
+      }
+    }
+
+    for (final filename in kMarianOnnxRequiredFiles) {
+      if (hasMerged &&
+          (filename == 'decoder_model.onnx' ||
+              filename == 'decoder_with_past_model.onnx')) {
+        continue;
+      }
+      await _downloadOneFile(
+        model.modelId,
+        modelDir,
+        filename,
+        requiresAuth: model.requiresAuth,
+        authToken: model.authToken,
+        onProgress: !hasMerged && filename == 'decoder_with_past_model.onnx'
+            ? onProgress
+            : null,
+      );
+    }
+    return modelDir;
   }
 
   Future<void> _downloadOneFile(

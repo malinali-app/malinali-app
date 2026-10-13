@@ -1,13 +1,8 @@
 import 'package:flutter/foundation.dart';
-import 'package:marian_flutter/marian_flutter.dart';
+import 'package:malinali/services/text_translator.dart';
 
-/// Document-mode decode: longer outputs than street chat bubbles.
-const TranslationConfig kDocumentTranslationConfig = TranslationConfig(
-  numBeams: 2,
-  maxNewTokens: 128,
-  lengthPenalty: 1.2,
-  noRepeatNgramSize: 3,
-);
+export 'package:malinali/services/text_translator.dart'
+    show DecodeConfig, kDocumentTranslationConfig, kVoiceDecodeConfig, TextTranslator;
 
 /// Progress snapshot for a running batch translation.
 @immutable
@@ -59,7 +54,7 @@ class DocumentTranslationResult {
 
 /// Offline batch document translation: chunk → translate → join.
 ///
-/// Designed to be unit-tested with a mocked [MarianService].
+/// Designed to be unit-tested with a mocked [TextTranslator].
 class DocumentTranslationService {
   DocumentTranslationService({
     this.maxChunkChars = defaultMaxChunkChars,
@@ -182,8 +177,8 @@ class DocumentTranslationService {
   /// [DocumentTranslationResult.cancelled] is true (partial text kept).
   Future<DocumentTranslationResult> translateDocument({
     required String sourceText,
-    required MarianService marian,
-    TranslationConfig config = kDocumentTranslationConfig,
+    required TextTranslator marian,
+    DecodeConfig config = kDocumentTranslationConfig,
     void Function(DocumentTranslationProgress progress)? onProgress,
     bool Function()? isCancelled,
     String Function(String chunk)? prepareSource,

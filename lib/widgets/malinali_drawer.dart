@@ -3,10 +3,10 @@ import 'package:malinali/pages/translate_page.dart';
 import 'package:malinali/pages/vosk_transcription_page.dart';
 import 'package:malinali/services/app_info.dart';
 import 'package:malinali/services/marian_runtime.dart';
+import 'package:malinali/services/text_translator.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/vosk_model_service.dart';
 import 'package:malinali/theme/malinali_chrome.dart';
-import 'package:marian_flutter/marian_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class MalinaliDrawer extends StatelessWidget {
@@ -20,18 +20,16 @@ class MalinaliDrawer extends StatelessWidget {
   Future<void> _openWritten(BuildContext context) async {
     final modelService = TranslationModelService();
     final runtime = MarianRuntime.instance;
-    MarianService? marian = runtime.marian;
+    TextTranslator? marian = runtime.translator;
     TranslationModel? model = runtime.model;
 
     if (marian == null || model == null) {
       final boot = await MarianRuntime.resolveBootModel(modelService);
       model = boot;
-      if (boot.isAsset) {
-        marian = await MarianService.loadFromAssets(assetFolder: boot.modelId);
-      } else {
-        final dir = await modelService.downloadModel(boot);
-        marian = await MarianService.loadFromDirectory(dir.path);
-      }
+      marian = await TextTranslatorLoader.downloadAndLoad(
+        model: boot,
+        modelService: modelService,
+      );
       runtime.attach(marian, boot);
       await MarianRuntime.saveLastSelectedModel(boot);
     }

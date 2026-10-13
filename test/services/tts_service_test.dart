@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
-import 'package:mockito/annotations.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:malinali/services/tts_service.dart';
 import 'package:languages_dart/languages_dart.dart';

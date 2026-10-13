@@ -42,7 +42,25 @@ android {
         // Reduced app bundle size from 450 MB by limiting to ARM architectures.
         // x86 and x86_64 can be re-added if emulator or Chromebook support is required.
         ndk {
-            abiFilters 'arm64-v8a', 'armeabi-v7a'
+            // x86_64 is the Android emulator (gphone64). ARM is the device.
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        }
+
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_STL=c++_shared",
+                          "-DMARIAN_ONNX_BUILD_SHARED=ON"
+                // SentencePiece also defines spm_* tools. They need liblog and
+                // are not shipped. Build only the Marian FFI library.
+                targets "marian_onnx"
+                abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "../../native/marian_onnx/CMakeLists.txt"
         }
     }
 

@@ -8,6 +8,7 @@ import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
 import 'package:malinali/pages/translate_page.dart';
 import 'package:malinali/pages/translation_settings_page.dart';
+import 'package:malinali/services/text_translator.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:languages_dart/languages_dart.dart';
 import 'package:marian_flutter/marian_flutter.dart';
@@ -65,7 +66,7 @@ void main() {
     await tester.runAsync(() async {
       await tester.pumpWidget(MaterialApp(
         home: TranslatePage(
-          initialMarian: mockMarian,
+          initialMarian: CandleTextTranslator(mockMarian),
           initialModel: model,
           modelService: mockModelService,
         ),
@@ -96,7 +97,7 @@ void main() {
     await tester.runAsync(() async {
       await tester.pumpWidget(MaterialApp(
         home: TranslatePage(
-          initialMarian: mockMarian,
+          initialMarian: CandleTextTranslator(mockMarian),
           modelService: mockModelService,
         ),
       ));
@@ -104,7 +105,7 @@ void main() {
       await tester.pump();
     });
 
-    final settingsButton = find.byTooltip('Paramètres');
+    final settingsButton = find.textContaining('Français → English');
     expect(settingsButton, findsOneWidget);
 
     await tester.tap(settingsButton);
@@ -126,7 +127,7 @@ void main() {
     await tester.runAsync(() async {
       await tester.pumpWidget(MaterialApp(
         home: TranslatePage(
-          initialMarian: mockMarian,
+          initialMarian: CandleTextTranslator(mockMarian),
           modelService: mockModelService,
         ),
       ));

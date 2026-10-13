@@ -6,11 +6,51 @@ import 'package:malinali/services/african_helsinki_models.dart';
 /// fine-tune transcript; the italic line under it is the English bridge.
 const bool kShowWolofText = true;
 
-/// Optional Whisper.cpp fine-tune for a spoken language.
+/// Generic multilingual Whisper size (sherpa-onnx int8 graphs).
+enum WhisperModel {
+  tiny('tiny', 'environ 103 Mo'),
+  small('small', 'environ 375 Mo');
+
+  const WhisperModel(this.modelName, this.sizeHintFr);
+
+  final String modelName;
+  final String sizeHintFr;
+}
+
+/// Hugging Face sherpa-onnx pack (encoder + decoder + tokens).
+class WhisperOnnxRepo {
+  const WhisperOnnxRepo({
+    required this.repoId,
+    this.encoderFile = 'encoder.int8.onnx',
+    this.decoderFile = 'decoder.int8.onnx',
+    this.tokensFile = 'tokens.txt',
+  });
+
+  final String repoId;
+  final String encoderFile;
+  final String decoderFile;
+  final String tokensFile;
+
+  String get baseUrl => 'https://huggingface.co/$repoId/resolve/main';
+
+  List<String> get files => [encoderFile, decoderFile, tokensFile];
+
+  String urlFor(String fileName) => '$baseUrl/$fileName';
+}
+
+const WhisperOnnxRepo kGenericTinyOnnx = WhisperOnnxRepo(
+  repoId: 'malinali-app/whisper-tiny-onnx',
+);
+
+const WhisperOnnxRepo kGenericSmallOnnx = WhisperOnnxRepo(
+  repoId: 'malinali-app/whisper-small-onnx',
+);
+
+/// Optional Whisper fine-tune for a spoken language (sherpa-onnx).
 ///
 /// Most packs transcribe in the source language. When [emitsEnglish] is true,
-/// training targets were English and the pack is used with `translate: true`.
-/// [ggmlUrl] is null when the pack cannot be redistributed (gate / non-commercial).
+/// training targets were English and the pack is used with `task=translate`.
+/// [onnxRepo] is null when the pack cannot be redistributed.
 class WhisperSpecialistPack {
   const WhisperSpecialistPack({
     required this.id,
@@ -20,9 +60,10 @@ class WhisperSpecialistPack {
     required this.downloadSizeHint,
     required this.hasMarianOutbound,
     required this.upstreamRepo,
-    this.ggmlUrl,
+    this.onnxRepo,
     this.unavailableReason,
     this.emitsEnglish = false,
+    this.builtin = false,
   });
 
   /// Stable id used for storage filenames and analytics.
@@ -34,11 +75,11 @@ class WhisperSpecialistPack {
   /// ISO code for Marian source switching (e.g. `yo`, `sw`).
   final String iso;
 
-  /// Language code passed to whisper.cpp (`auto`, `sw`, `yo`, …).
+  /// Language code passed to Whisper (`auto`, `sw`, `yo`, …).
   final String whisperLang;
 
-  /// Hugging Face resolve URL for the published ggml `.bin`, or null if unavailable.
-  final String? ggmlUrl;
+  /// Hugging Face sherpa-onnx pack, or null if unavailable.
+  final WhisperOnnxRepo? onnxRepo;
 
   /// Approximate download size shown in the UI.
   final String downloadSizeHint;
@@ -49,13 +90,17 @@ class WhisperSpecialistPack {
   /// Upstream Hugging Face transformers repo (credit).
   final String upstreamRepo;
 
-  /// French reason when [ggmlUrl] is null.
+  /// French reason when [onnxRepo] is null.
   final String? unavailableReason;
 
   /// True when this pack's training targets are English (speech → English).
   final bool emitsEnglish;
 
-  bool get isDownloadable => ggmlUrl != null && ggmlUrl!.isNotEmpty;
+  /// True for English/French entries that use the generic multilingual pack.
+  final bool builtin;
+
+  bool get isDownloadable =>
+      builtin || (onnxRepo != null && onnxRepo!.repoId.isNotEmpty);
 
   /// Why this pack cannot be selected.
   String? get statusReason => unavailableReason;
@@ -63,19 +108,18 @@ class WhisperSpecialistPack {
   /// English-output packs use the translate task; others only transcribe.
   bool get translate => emitsEnglish;
 
-  String get fileName => '$id.bin';
+  String get dirName => id;
 }
 
-/// Curated specialist packs. First-wave ggml under `malinali-app/*-ggml`.
+/// Curated specialist packs. sherpa-onnx int8 under `malinali-app/*-onnx`.
 const List<WhisperSpecialistPack> kWhisperSpecialistPacks = [
   WhisperSpecialistPack(
     id: 'swahili-small',
     labelFr: 'Swahili (small)',
     iso: 'sw',
     whisperLang: 'sw',
-    ggmlUrl:
-        'https://huggingface.co/malinali-app/whisper-swahili-small-ggml/resolve/main/ggml-model-q8_0.bin',
-    downloadSizeHint: 'environ 250 Mo',
+    onnxRepo: WhisperOnnxRepo(repoId: 'malinali-app/whisper-swahili-small-onnx'),
+    downloadSizeHint: 'environ 180 Mo',
     hasMarianOutbound: false,
     upstreamRepo: 'PaschalK/whisper-swahili-small',
   ),
@@ -84,9 +128,8 @@ const List<WhisperSpecialistPack> kWhisperSpecialistPacks = [
     labelFr: 'Yoruba + code-switching (small)',
     iso: 'yo',
     whisperLang: 'yo',
-    ggmlUrl:
-        'https://huggingface.co/malinali-app/whisper-small-yoruba-ggml/resolve/main/ggml-model-q8_0.bin',
-    downloadSizeHint: 'environ 250 Mo',
+    onnxRepo: WhisperOnnxRepo(repoId: 'malinali-app/whisper-small-yoruba-onnx'),
+    downloadSizeHint: 'environ 180 Mo',
     hasMarianOutbound: true,
     upstreamRepo: 'LyngualLabs/whisper-small-yoruba',
   ),
@@ -94,27 +137,22 @@ const List<WhisperSpecialistPack> kWhisperSpecialistPacks = [
     id: 'kinyarwanda-small',
     labelFr: 'Kinyarwanda (small)',
     iso: 'rw',
-    // `<|rw|>` is not a Whisper language token; prompt lang confirmed at convert time.
     whisperLang: 'sw',
-    ggmlUrl: null,
-    downloadSizeHint: 'environ 250 Mo',
+    onnxRepo: null,
+    downloadSizeHint: 'environ 180 Mo',
     hasMarianOutbound: true,
     upstreamRepo: 'mbazaNLP/Whisper-Small-Kinyarwanda',
     unavailableReason:
         'Dépôt Hugging Face avec accès restreint ; licence à clarifier '
-        'avant republication ggml.',
+        'avant republication ONNX.',
   ),
   WhisperSpecialistPack(
     id: 'wolof-small',
     labelFr: 'Wolof (small)',
     iso: 'wo',
-    // No `<|wo|>` token. On the clip dofbi rendered as "Maa bëgg aar gi",
-    // prompting English recovered salaamalekum, nanga def, and the name.
-    // French prompting did not. New id so the cached dofbi ggml is not reused.
     whisperLang: 'en',
-    ggmlUrl:
-        'https://huggingface.co/malinali-app/whisper-small-wolof-ggml/resolve/main/ggml-model-q8_0.bin',
-    downloadSizeHint: 'environ 250 Mo',
+    onnxRepo: WhisperOnnxRepo(repoId: 'malinali-app/whisper-small-wolof-onnx'),
+    downloadSizeHint: 'environ 180 Mo',
     hasMarianOutbound: true,
     upstreamRepo: 'M9and2M/whisper-small-wolof',
   ),
@@ -123,8 +161,8 @@ const List<WhisperSpecialistPack> kWhisperSpecialistPacks = [
     labelFr: 'Dioula (tiny)',
     iso: 'dyu',
     whisperLang: 'auto',
-    ggmlUrl: null,
-    downloadSizeHint: 'environ 75 Mo',
+    onnxRepo: null,
+    downloadSizeHint: 'environ 50 Mo',
     hasMarianOutbound: false,
     upstreamRepo: 'Dama12/whisper-tiny-dioula',
     unavailableReason:
@@ -136,8 +174,8 @@ const List<WhisperSpecialistPack> kWhisperSpecialistPacks = [
     labelFr: 'Mòoré (small)',
     iso: 'mos',
     whisperLang: 'auto',
-    ggmlUrl: null,
-    downloadSizeHint: 'environ 250 Mo',
+    onnxRepo: null,
+    downloadSizeHint: 'environ 180 Mo',
     hasMarianOutbound: false,
     upstreamRepo: 'Dama12/whisper-small-moore',
     unavailableReason:
@@ -151,6 +189,10 @@ WhisperSpecialistPack? whisperSpecialistById(String id) {
     if (pack.id == id) return pack;
   }
   return null;
+}
+
+WhisperOnnxRepo genericOnnxRepo(WhisperModel model) {
+  return model == WhisperModel.small ? kGenericSmallOnnx : kGenericTinyOnnx;
 }
 
 /// Resolves a [Language] for Marian source switching after specialist ASR.

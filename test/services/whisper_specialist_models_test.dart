@@ -13,8 +13,8 @@ void main() {
       'wolof-small',
     ]);
     for (final pack in downloadable) {
-      expect(pack.ggmlUrl, contains('malinali-app/'));
-      expect(pack.ggmlUrl, endsWith('ggml-model-q8_0.bin'));
+      expect(pack.onnxRepo?.repoId, contains('malinali-app/'));
+      expect(pack.onnxRepo?.repoId, contains('-onnx'));
       expect(pack.translate, isFalse);
     }
   });
@@ -28,7 +28,7 @@ void main() {
     ]);
     for (final pack in blocked) {
       expect(pack.unavailableReason, isNotEmpty);
-      expect(pack.ggmlUrl, isNull);
+      expect(pack.onnxRepo, isNull);
     }
   });
 
@@ -59,10 +59,9 @@ void main() {
     final wolof = whisperSpecialistById('wolof-small')!;
     expect(kShowWolofText, isTrue);
     expect(wolof.isDownloadable, isTrue);
-    expect(wolof.ggmlUrl, contains('whisper-small-wolof-ggml'));
-    expect(wolof.ggmlUrl, endsWith('ggml-model-q8_0.bin'));
+    expect(wolof.onnxRepo?.repoId, 'malinali-app/whisper-small-wolof-onnx');
     expect(wolof.upstreamRepo, 'M9and2M/whisper-small-wolof');
-    expect(wolof.fileName, 'wolof-small.bin');
+    expect(wolof.dirName, 'wolof-small');
     expect(whisperSpecialistById('wolof-asr'), isNull);
   });
 }

@@ -101,6 +101,26 @@ if(EXISTS "${_FFMPEGKIT_BIN}/libffmpegkit.dll")
     COMPONENT Runtime)
 endif()
 
+# Marian ONNX FFI only. sherpa-onnx already installs onnxruntime.dll (ORT 1.28,
+# API 28) into this folder. Copying Marian's 1.20.1 onnxruntime.dll here
+# replaces that file and Whisper aborts. marian_onnx.dll imports
+# onnxruntime.dll and binds to sherpa's newer runtime, which still serves
+# API 20. Android keeps a separate libort_marian.so and is not affected.
+set(_MARIAN_ONNX_DLL "")
+foreach(_marian_cand
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/marian_onnx/build_dll/Release/marian_onnx.dll"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/marian_onnx/build_dll/Debug/marian_onnx.dll")
+  if(EXISTS "${_marian_cand}")
+    set(_MARIAN_ONNX_DLL "${_marian_cand}")
+    break()
+  endif()
+endforeach()
+if(EXISTS "${_MARIAN_ONNX_DLL}")
+  install(FILES "${_MARIAN_ONNX_DLL}"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
+
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/windows/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"
