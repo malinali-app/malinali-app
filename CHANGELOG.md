@@ -1,5 +1,19 @@
 # Changelog
 
+- rework whatsapp vocal note sharing to avoid redownloading the model
+
+## 1.2.3 - 16 octobre 2026
+
+- french whisper translation for better result
+- wolof text to speech in spanish for trying it out
+
+## 1.2.2 - 14 octobre 2026
+
+- Voice French→English uses the standard pack [`malinali-app/opus-mt-fr-en-onnx`](https://huggingface.co/malinali-app/opus-mt-fr-en-onnx) (the tiny `opus-mt_tiny_fra-eng` hop is no longer used for speech, including the French→English→Wolof cascade). Written boot still uses the tiny pack.
+- sherpa onnx streaminig
+- speech to text using french and little hack to process wolof, ex: .replaceAll('x', 'r').replaceAll('X', 'R'); // Uvular fricative
+
+
 ## 1.1.9 - 12 octobre 2026
 
 - feat: whisper onnx through sherpa_onnx

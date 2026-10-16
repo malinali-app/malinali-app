@@ -28,6 +28,7 @@ class VoicePreferences {
     required this.whisperSize,
     this.appLanguageIso,
     this.targetLanguages = const ['en', 'fr'],
+    this.useFastSttForEnFr = false,
   });
 
   final String sourceIso;
@@ -35,14 +36,22 @@ class VoicePreferences {
   final VoiceWhisperSize whisperSize;
   final String? appLanguageIso;
   final List<String> targetLanguages;
+  final bool useFastSttForEnFr;
 
+  /// Voice sources we stand behind: FR/EN speech → Wolof (and other high-BLEU
+  /// targets). Low-resource speech sources (Wolof ASR cascade, etc.) are not
+  /// offered — quality was not shippable.
   static const defaults = VoicePreferences(
-    sourceIso: 'wo',
-    targetIso: 'fr',
+    sourceIso: 'fr',
+    targetIso: 'wo',
     whisperSize: VoiceWhisperSize.quality,
     appLanguageIso: 'fr',
     targetLanguages: ['en', 'fr'],
+    useFastSttForEnFr: true,
   );
+
+  /// Spoken-language ISOs offered in voice setup / pair pickers.
+  static const allowedVoiceSourceIsos = {'en', 'fr'};
 
   Map<String, dynamic> toJson() => {
         'sourceIso': sourceIso,
@@ -50,6 +59,7 @@ class VoicePreferences {
         'whisperSize': whisperSize.preferenceKey,
         'appLanguageIso': appLanguageIso,
         'targetLanguages': targetLanguages,
+        'useFastSttForEnFr': useFastSttForEnFr,
       };
 
   static VoicePreferences fromJson(Map<String, dynamic> json) {
@@ -58,15 +68,30 @@ class VoicePreferences {
       (s) => s.preferenceKey == sizeKey,
       orElse: () => VoiceWhisperSize.quality,
     );
+    var sourceIso = (json['sourceIso'] as String? ?? defaults.sourceIso)
+        .toLowerCase();
+    var targetIso = (json['targetIso'] as String? ?? defaults.targetIso)
+        .toLowerCase();
+    // Migrate retired low-resource voice sources (e.g. wo→fr → fr→wo).
+    if (!allowedVoiceSourceIsos.contains(sourceIso)) {
+      if (sourceIso == 'wo' && (targetIso == 'en' || targetIso == 'fr')) {
+        sourceIso = targetIso;
+        targetIso = 'wo';
+      } else {
+        sourceIso = defaults.sourceIso;
+        targetIso = defaults.targetIso;
+      }
+    }
     return VoicePreferences(
-      sourceIso: (json['sourceIso'] as String? ?? 'wo').toLowerCase(),
-      targetIso: (json['targetIso'] as String? ?? 'fr').toLowerCase(),
+      sourceIso: sourceIso,
+      targetIso: targetIso,
       whisperSize: size,
       appLanguageIso: json['appLanguageIso'] as String?,
       targetLanguages: (json['targetLanguages'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           ['en', 'fr'],
+      useFastSttForEnFr: json['useFastSttForEnFr'] as bool? ?? true,
     );
   }
 
@@ -76,6 +101,7 @@ class VoicePreferences {
     VoiceWhisperSize? whisperSize,
     String? appLanguageIso,
     List<String>? targetLanguages,
+    bool? useFastSttForEnFr,
   }) {
     return VoicePreferences(
       sourceIso: sourceIso ?? this.sourceIso,
@@ -83,14 +109,18 @@ class VoicePreferences {
       whisperSize: whisperSize ?? this.whisperSize,
       appLanguageIso: appLanguageIso ?? this.appLanguageIso,
       targetLanguages: targetLanguages ?? this.targetLanguages,
+      useFastSttForEnFr: useFastSttForEnFr ?? this.useFastSttForEnFr,
     );
   }
 }
 
-/// Spoken languages offered on the voice home (downloadable specialist ISOs).
+/// Spoken languages offered on the voice home.
+///
+/// Only FR/EN as sources for now. Specialist packs (Wolof ASR, etc.) stay in
+/// [kWhisperSpecialistPacks] for tooling, but are not voice-pair sources.
 List<WhisperSpecialistPack> voiceSpokenLanguagePacks() {
-  final out = <WhisperSpecialistPack>[
-    const WhisperSpecialistPack(
+  return const [
+    WhisperSpecialistPack(
       id: 'generic-en',
       labelFr: 'Anglais',
       iso: 'en',
@@ -100,7 +130,7 @@ List<WhisperSpecialistPack> voiceSpokenLanguagePacks() {
       upstreamRepo: 'openai/whisper',
       builtin: true,
     ),
-    const WhisperSpecialistPack(
+    WhisperSpecialistPack(
       id: 'generic-fr',
       labelFr: 'Français (générique)',
       iso: 'fr',
@@ -111,8 +141,6 @@ List<WhisperSpecialistPack> voiceSpokenLanguagePacks() {
       builtin: true,
     ),
   ];
-  out.addAll(kWhisperSpecialistPacks.where((p) => p.isDownloadable));
-  return out;
 }
 
 /// Display language for a voice source ISO.
@@ -134,10 +162,12 @@ TranslationModel voiceOnnxHop(TranslationModel model) {
   const twins = <String, String>{
     'Xenova/opus-mt-en-fr': 'malinali-app/opus-mt-en-fr-onnx',
     'Helsinki-NLP/opus-mt-en-fr': 'malinali-app/opus-mt-en-fr-onnx',
-    'Xenova/opus-mt-fr-en': 'malinali-app/opus-mt_tiny_fra-eng-onnx',
-    'Helsinki-NLP/opus-mt-fr-en': 'malinali-app/opus-mt_tiny_fra-eng-onnx',
-    'Helsinki-NLP/opus-mt_tiny_fra-eng':
-        'malinali-app/opus-mt_tiny_fra-eng-onnx',
+    // Standard Helsinki FR→EN. The tiny pack is too weak for voice,
+    // especially the French → English → Wolof cascade.
+    'Xenova/opus-mt-fr-en': 'malinali-app/opus-mt-fr-en-onnx',
+    'Helsinki-NLP/opus-mt-fr-en': 'malinali-app/opus-mt-fr-en-onnx',
+    'Helsinki-NLP/opus-mt_tiny_fra-eng': 'malinali-app/opus-mt-fr-en-onnx',
+    'malinali-app/opus-mt_tiny_fra-eng-onnx': 'malinali-app/opus-mt-fr-en-onnx',
     'malinali-app/traduction-wolof-en':
         'malinali-app/traduction-wolof-en-onnx',
     'malinali-app/traduction-en-wolof':
@@ -209,13 +239,10 @@ List<TranslationModel> voiceEnglishTargetModels() {
     if (out.any((m) => m.modelId == hop.modelId)) continue;
     out.add(hop);
   }
-  // Stable order: French first, then alpha by display name.
   out.sort((a, b) {
-    final aFr = a.targetLang.localeIntl.locale.languageCode == 'fr';
-    final bFr = b.targetLang.localeIntl.locale.languageCode == 'fr';
-    if (aFr && !bFr) return -1;
-    if (!aFr && bFr) return 1;
-    return _languageLabel(a.targetLang).compareTo(_languageLabel(b.targetLang));
+    return _languageLabel(a.targetLang).toLowerCase().compareTo(
+          _languageLabel(b.targetLang).toLowerCase(),
+        );
   });
   return out;
 }

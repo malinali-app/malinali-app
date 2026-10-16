@@ -17,6 +17,10 @@ class _FakeWhisper extends Fake implements WhisperSpeechService {
   String? language;
   bool? translate;
   int released = 0;
+  bool genericDownloaded = true;
+  bool specialistDownloaded = true;
+  bool acceptSpecialistDownload = true;
+  int genericEnsureCalls = 0;
 
   @override
   Future<void> setActivePack(WhisperSpecialistPack? p) async {
@@ -32,17 +36,31 @@ class _FakeWhisper extends Fake implements WhisperSpeechService {
   Future<String> ensureGenericModel([
     WhisperModel? model,
     void Function(int, int)? onProgress,
-  ]) async =>
-      'ok';
+  ]) async {
+    genericEnsureCalls++;
+    genericDownloaded = true;
+    return 'ok';
+  }
+
+  @override
+  Future<String> downloadSpecialist(
+    WhisperSpecialistPack pack, {
+    void Function(int received, int total)? onProgress,
+  }) async {
+    if (acceptSpecialistDownload) specialistDownloaded = true;
+    return 'ok';
+  }
 
   @override
   Future<String> ensureModel() async => 'ok';
 
   @override
-  Future<bool> isGenericDownloaded(WhisperModel model) async => true;
+  Future<bool> isGenericDownloaded(WhisperModel model) async =>
+      genericDownloaded;
 
   @override
-  Future<bool> isSpecialistDownloaded(WhisperSpecialistPack pack) async => true;
+  Future<bool> isSpecialistDownloaded(WhisperSpecialistPack pack) async =>
+      specialistDownloaded;
 
   @override
   Future<void> releaseParkedModel() async {
@@ -141,7 +159,13 @@ void main() {
     final whisper = _FakeWhisper()..transcript = 'Nanga def';
     final seen = <String, String>{};
     final partials = <VoiceTurn>[];
-    final plan = const VoiceSpeechResolver().resolve(VoicePreferences.defaults);
+    final plan = const VoiceSpeechResolver().resolve(
+      const VoicePreferences(
+        sourceIso: 'wo',
+        targetIso: 'fr',
+        whisperSize: VoiceWhisperSize.quality,
+      ),
+    );
     final turn = await VoiceTurnPipeline(
       whisper: whisper,
       modelService: _FakeModelService(),
@@ -181,8 +205,8 @@ void main() {
     expect(partials.first.targetText, isEmpty);
   });
 
-  test('French→Wolof cascade transcribes French then fr→en then en→wo', () async {
-    final whisper = _FakeWhisper()..transcript = 'Bonjour, comment allez-vous ?';
+  test('French→Wolof is Whisper English then English→Wolof only', () async {
+    final whisper = _FakeWhisper()..transcript = 'Hello, how are you?';
     final seen = <String, String>{};
     final plan = const VoiceSpeechResolver().resolve(
       const VoicePreferences(
@@ -197,30 +221,28 @@ void main() {
       translate: (model, text) async {
         seen[model.modelId] = text;
         switch (model.modelId) {
-          case 'malinali-app/opus-mt_tiny_fra-eng-onnx':
-            expect(text, 'Bonjour, comment allez-vous ?');
-            return 'Hello, how are you?';
           case 'malinali-app/traduction-en-wolof-onnx':
             expect(text.startsWith('>>wol<< '), isTrue);
+            expect(text, contains('Hello, how are you?'));
             return 'Nanga def';
         }
         throw StateError('unexpected model ${model.modelId}');
       },
     ).run(wavPath: 'bonjour.wav', plan: plan);
 
-    expect(plan.strategy, VoiceSpeechStrategy.transcribeThenMarianToEnglish);
+    expect(plan.strategy, VoiceSpeechStrategy.genericTranslate);
+    expect(plan.genericModel.modelName, 'small');
     expect(whisper.language, 'fr');
-    expect(whisper.translate, isFalse);
+    expect(whisper.translate, isTrue);
     expect(whisper.pack, isNull);
-    expect(seen['malinali-app/opus-mt_tiny_fra-eng-onnx'], 'Bonjour, comment allez-vous ?');
-    expect(turn.sourceTranscript, 'Bonjour, comment allez-vous ?');
-    expect(turn.englishText, 'Hello, how are you?');
+    expect(seen.containsKey('malinali-app/opus-mt-fr-en-onnx'), isFalse);
+    expect(turn.sourceTranscript, 'Hello, how are you?');
+    expect(turn.englishText, isNull);
     expect(turn.targetText, 'Nanga def');
   });
 
-  test('recording gate waits until Marian packs are downloaded', () async {
+  test('recording gate waits until the English→Wolof pack is downloaded', () async {
     final models = _FakeModelService()
-      ..downloaded['malinali-app/opus-mt_tiny_fra-eng-onnx'] = false
       ..downloaded['malinali-app/traduction-en-wolof-onnx'] = false;
     final pipeline = VoiceTurnPipeline(
       whisper: _FakeWhisper(),
@@ -230,41 +252,105 @@ void main() {
       const VoicePreferences(
         sourceIso: 'fr',
         targetIso: 'wo',
-        whisperSize: VoiceWhisperSize.quality,
+        whisperSize: VoiceWhisperSize.compact,
       ),
     );
     final statuses = <String>[];
 
+    expect(plan.genericModel.modelName, 'tiny');
+    expect(plan.translateToEnglish, isTrue);
     expect(await pipeline.modelsReady(plan), isFalse);
     await pipeline.ensureModels(plan, onStatus: statuses.add);
     expect(await pipeline.modelsReady(plan), isTrue);
-    expect(
-      models.downloaded['malinali-app/opus-mt_tiny_fra-eng-onnx'],
-      isTrue,
-    );
+    expect(models.downloaded['malinali-app/opus-mt-fr-en-onnx'], isNull);
     expect(
       models.downloaded['malinali-app/traduction-en-wolof-onnx'],
       isTrue,
     );
-    expect(
-      statuses,
-      contains(
-        'Téléchargement ${plan.marianDownloads[0].displayName} (1/2)…',
+    expect(statuses, ['Téléchargement du modèle de traduction…']);
+  });
+
+  test('English→Wolof stays blocked until the speech model is on disk', () async {
+    final whisper = _FakeWhisper()..genericDownloaded = false;
+    final models = _FakeModelService()
+      ..downloaded['malinali-app/traduction-en-wolof-onnx'] = true;
+    final pipeline = VoiceTurnPipeline(
+      whisper: whisper,
+      modelService: models,
+    );
+    final plan = const VoiceSpeechResolver().resolve(
+      const VoicePreferences(
+        sourceIso: 'en',
+        targetIso: 'wo',
+        whisperSize: VoiceWhisperSize.quality,
+        useFastSttForEnFr: false,
       ),
     );
+
+    expect(plan.needsGenericWhisper, isTrue);
+    expect(plan.specialist, isNull);
+    expect(await pipeline.modelsReady(plan), isFalse);
+
+    await pipeline.ensureModels(plan);
+
+    expect(whisper.genericEnsureCalls, 1);
+    expect(await pipeline.modelsReady(plan), isTrue);
+  });
+
+  test('fast English→Wolof stays blocked until the Kroko pack is on disk', () async {
+    final whisper = _FakeWhisper()
+      ..specialistDownloaded = false
+      ..acceptSpecialistDownload = false;
+    final models = _FakeModelService()
+      ..downloaded['malinali-app/traduction-en-wolof-onnx'] = true;
+    final pipeline = VoiceTurnPipeline(
+      whisper: whisper,
+      modelService: models,
+    );
+    final plan = const VoiceSpeechResolver().resolve(
+      const VoicePreferences(
+        sourceIso: 'en',
+        targetIso: 'wo',
+        whisperSize: VoiceWhisperSize.quality,
+        useFastSttForEnFr: true,
+      ),
+    );
+
+    expect(plan.specialist?.id, 'icefall-en');
+    expect(await pipeline.modelsReady(plan), isFalse);
     expect(
-      statuses,
-      contains(
-        'Téléchargement ${plan.marianDownloads[1].displayName} (2/2)…',
+      pipeline.ensureModels(plan),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          'Les modèles de cette paire ne sont pas prêts.',
+        ),
       ),
     );
   });
 
   test('first Marian hop for Wolof cascade is wo→en not en→fr', () {
-    final plan = const VoiceSpeechResolver().resolve(VoicePreferences.defaults);
+    final plan = const VoiceSpeechResolver().resolve(
+      const VoicePreferences(
+        sourceIso: 'wo',
+        targetIso: 'fr',
+        whisperSize: VoiceWhisperSize.quality,
+      ),
+    );
     expect(
       VoiceTurnPipeline.firstMarianHop(plan)?.modelId,
       'malinali-app/traduction-wolof-en-onnx',
+    );
+  });
+
+  test('defaults French→Wolof first Marian hop is English→Wolof', () {
+    final plan =
+        const VoiceSpeechResolver().resolve(VoicePreferences.defaults);
+    expect(plan.translateToEnglish, isTrue);
+    expect(
+      VoiceTurnPipeline.firstMarianHop(plan)?.modelId,
+      'malinali-app/traduction-en-wolof-onnx',
     );
   });
 
@@ -296,8 +382,8 @@ void main() {
     final hop2Session = _TrackingTranslator();
     final plan = const VoiceSpeechResolver().resolve(
       const VoicePreferences(
-        sourceIso: 'fr',
-        targetIso: 'wo',
+        sourceIso: 'wo',
+        targetIso: 'fr',
         whisperSize: VoiceWhisperSize.quality,
       ),
     );

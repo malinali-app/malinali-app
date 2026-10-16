@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:malinali/services/wav_pcm_info.dart';
 import 'package:malinali/services/whisper_native.dart';
 import 'package:record/record.dart';
 
@@ -20,10 +21,10 @@ class WhisperSpeechService {
     AudioRecorder Function()? recorderFactory,
     Dio? dio,
     WhisperModel genericModel = WhisperModel.tiny,
-  })  : _audioRecorder = audioRecorder,
-        _recorderFactory = recorderFactory,
-        _dio = dio ?? Dio(),
-        _genericModel = genericModel;
+  }) : _audioRecorder = audioRecorder,
+       _recorderFactory = recorderFactory,
+       _dio = dio ?? Dio(),
+       _genericModel = genericModel;
 
   /// Legacy alias for the compact pack.
   static const WhisperModel model = WhisperModel.tiny;
@@ -36,6 +37,7 @@ class WhisperSpeechService {
     'encoder.int8.onnx',
     'decoder.int8.onnx',
     'tokens.txt',
+    'joiner.int8.onnx',
   ];
 
   final Dio _dio;
@@ -43,9 +45,13 @@ class WhisperSpeechService {
   final AudioRecorder Function()? _recorderFactory;
   WhisperModel _genericModel;
 
-  MalinaliWhisperLiveSession? _session;
+  SherpaLiveSession? _session;
   StreamSubscription<String>? _partialSub;
   StreamSubscription<Uint8List>? _audioSub;
+  IOSink? _wavSink;
+  final List<Uint8List> _pendingPcm = [];
+  String _latestPartial = '';
+  int _epoch = 0;
 
   WhisperSpecialistPack? _specialist;
   bool _ready = false;
@@ -66,9 +72,10 @@ class WhisperSpeechService {
   WhisperModel get genericModel => _genericModel;
 
   /// Analytics / UI label for the active pack.
-  String get engineId => _specialist == null
-      ? 'whisper-${_genericModel.modelName}'
-      : 'whisper-${_specialist!.id}';
+  String get engineId =>
+      _specialist == null
+          ? 'whisper-${_genericModel.modelName}'
+          : 'sherpa-${_specialist!.id}';
 
   AudioRecorder _recorder() {
     return _audioRecorder ??=
@@ -77,9 +84,10 @@ class WhisperSpeechService {
 
   Future<Directory> _rootStorage() async {
     final docs = await getApplicationDocumentsDirectory();
-    final String baseDir = Platform.isWindows
-        ? p.join(docs.path, 'Malinali_do_not_delete', 'whisper_onnx')
-        : p.join(docs.path, 'whisper_onnx');
+    final String baseDir =
+        Platform.isWindows
+            ? p.join(docs.path, 'Malinali_do_not_delete', 'sherpa_onnx')
+            : p.join(docs.path, 'sherpa_onnx');
     final dir = Directory(baseDir);
     if (!dir.existsSync()) {
       dir.createSync(recursive: true);
@@ -107,21 +115,26 @@ class WhisperSpeechService {
     return p.join(root.path, 'generic', model.modelName);
   }
 
-  bool _dirComplete(String dirPath) {
+  bool _dirComplete(String dirPath, {WhisperOnnxRepo? repo}) {
     final dir = Directory(dirPath);
     if (!dir.existsSync()) return false;
-    for (final name in kOnnxFiles) {
+    final files = repo?.files ?? kOnnxFiles.sublist(0, 3);
+    for (final name in files) {
       final f = File(p.join(dirPath, name));
       if (!f.existsSync() || f.lengthSync() <= 0) return false;
     }
     return true;
   }
 
-  WhisperOnnxPaths _pathsIn(String dirPath) {
+  WhisperOnnxPaths _pathsIn(String dirPath, {WhisperOnnxRepo? repo}) {
     return WhisperOnnxPaths(
-      encoder: p.join(dirPath, 'encoder.int8.onnx'),
-      decoder: p.join(dirPath, 'decoder.int8.onnx'),
-      tokens: p.join(dirPath, 'tokens.txt'),
+      encoder: p.join(dirPath, repo?.encoderFile ?? 'encoder.int8.onnx'),
+      decoder: p.join(dirPath, repo?.decoderFile ?? 'decoder.int8.onnx'),
+      tokens: p.join(dirPath, repo?.tokensFile ?? 'tokens.txt'),
+      joiner:
+          repo?.joinerFile != null ? p.join(dirPath, repo!.joinerFile!) : null,
+      modelType: repo?.modelType ?? 'whisper',
+      sherpaModelType: repo?.sherpaModelType ?? '',
     );
   }
 
@@ -129,7 +142,7 @@ class WhisperSpeechService {
   Future<bool> isModelPresent() async {
     try {
       final dir = await _activeModelDir();
-      final present = _dirComplete(dir);
+      final present = _dirComplete(dir, repo: _specialist?.onnxRepo);
       _ready = present;
       return present;
     } catch (_) {
@@ -165,7 +178,7 @@ class WhisperSpeechService {
   Future<bool> isSpecialistDownloaded(WhisperSpecialistPack pack) async {
     if (!pack.isDownloadable || pack.onnxRepo == null) return false;
     try {
-      return _dirComplete(await specialistDirPath(pack));
+      return _dirComplete(await specialistDirPath(pack), repo: pack.onnxRepo);
     } catch (_) {
       return false;
     }
@@ -242,7 +255,22 @@ class WhisperSpeechService {
     if (!dir.existsSync()) {
       dir.createSync(recursive: true);
     }
-    if (_dirComplete(dirPath)) return;
+    if (_dirComplete(dirPath, repo: repo)) return;
+
+    // A previous pack in this folder (same id, different filenames) must not
+    // keep its tokens.txt. Both English Zipformers use that name.
+    final expected = repo.files.toSet();
+    final hasStale = dir.listSync().whereType<File>().any((f) {
+      final name = p.basename(f.path);
+      return !name.endsWith('.partial') && !expected.contains(name);
+    });
+    if (hasStale) {
+      for (final f in dir.listSync().whereType<File>()) {
+        try {
+          f.deleteSync();
+        } catch (_) {}
+      }
+    }
 
     var done = 0;
     final files = repo.files;
@@ -258,12 +286,14 @@ class WhisperSpeechService {
         await _dio.download(
           repo.urlFor(name),
           tmp.path,
-          onReceiveProgress: onProgress == null
-              ? null
-              : (recv, total) {
-                  final int fileProgress = (total > 0) ? (recv * 1000 ~/ total) : 0;
-                  onProgress(done * 1000 + fileProgress, files.length * 1000);
-                },
+          onReceiveProgress:
+              onProgress == null
+                  ? null
+                  : (recv, total) {
+                    final int fileProgress =
+                        (total > 0) ? (recv * 1000 ~/ total) : 0;
+                    onProgress(done * 1000 + fileProgress, files.length * 1000);
+                  },
         );
         if (dest.existsSync()) {
           try {
@@ -300,36 +330,49 @@ class WhisperSpeechService {
     } catch (_) {}
   }
 
-  Future<void> startListening() async {
-    if (_listening) return;
+  /// Open a Whisper or Sherpa session for PCM that is not the microphone.
+  Future<SherpaLiveSession> openPcmSession({
+    String? language,
+    bool? translate,
+  }) async {
     if (!_ready) {
       await ensureModel();
+    }
+    final dir = await _activeModelDir();
+    final specialist = _specialist;
+    if (!_dirComplete(dir, repo: specialist?.onnxRepo)) {
+      throw Exception('Model files not found in $dir');
+    }
+    return startSherpaLiveSession(
+      model: _pathsIn(dir, repo: specialist?.onnxRepo),
+      lang: _languageFor(specialist, override: language),
+      translate: _translateFor(specialist, override: translate),
+    );
+  }
+
+  Future<void> startListening({
+    String? wavPath,
+    String? language,
+    bool? translate,
+  }) async {
+    if (_listening || _session != null || _wavSink != null) {
+      await stopListening();
+    }
+    final epoch = ++_epoch;
+
+    if (wavPath != null) {
+      _wavSink = await openPlaceholderWav(wavPath);
+    }
+    if (epoch != _epoch) {
+      await _closeWav();
+      return;
     }
 
     final hasPermission = await _recorder().hasPermission();
     if (!hasPermission) {
+      await _closeWav();
       throw Exception('Microphone permission not granted');
     }
-
-    final dir = await _activeModelDir();
-    if (!_dirComplete(dir)) {
-      throw Exception('Model files not found in $dir');
-    }
-
-    final specialist = _specialist;
-    final session = await startMalinaliWhisperLiveSession(
-      model: _pathsIn(dir),
-      lang: _languageFor(specialist),
-      translate: _translateFor(specialist),
-    );
-    _session = session;
-    _partialSub = session.partials.listen(
-      (text) {
-        final partial = text.trim();
-        if (partial.isNotEmpty) onPartialResult?.call(partial);
-      },
-      onError: (_) => onError?.call(),
-    );
 
     final stream = await _recorder().startStream(
       const RecordConfig(
@@ -338,22 +381,80 @@ class WhisperSpeechService {
         numChannels: 1,
       ),
     );
+    if (epoch != _epoch) {
+      await _recorder().stop();
+      await _closeWav();
+      return;
+    }
 
     _listening = true;
+    _pendingPcm.clear();
+    _latestPartial = '';
     _audioSub = stream.listen(
       (chunk) {
-        if (!_listening) return;
-        session.feed(chunk);
+        if (!_listening || epoch != _epoch) return;
+        final copy = Uint8List.fromList(chunk);
+        _wavSink?.add(copy);
+        final session = _session;
+        if (session == null) {
+          _pendingPcm.add(copy);
+        } else {
+          session.feed(copy);
+        }
       },
       onError: (_) {
         _listening = false;
         onError?.call();
       },
     );
+
+    try {
+      if (!_ready) {
+        await ensureModel();
+      }
+      final dir = await _activeModelDir();
+      final specialist = _specialist;
+      if (!_dirComplete(dir, repo: specialist?.onnxRepo)) {
+        throw Exception('Model files not found in $dir');
+      }
+      final session = await startSherpaLiveSession(
+        model: _pathsIn(dir, repo: specialist?.onnxRepo),
+        lang: _languageFor(specialist, override: language),
+        translate: _translateFor(specialist, override: translate),
+      );
+      if (epoch != _epoch) {
+        session.setSink(null);
+        await session.dispose();
+        return;
+      }
+      session.setSink(null);
+      _session = session;
+      final backlog = List<Uint8List>.of(_pendingPcm);
+      _pendingPcm.clear();
+      for (final chunk in backlog) {
+        session.feed(chunk);
+      }
+      _partialSub = session.partials.listen((text) {
+        final partial = text.trim();
+        if (partial.isEmpty) return;
+        _latestPartial = partial;
+        onPartialResult?.call(partial);
+      }, onError: (_) => onError?.call());
+    } catch (e) {
+      _listening = false;
+      await _audioSub?.cancel();
+      _audioSub = null;
+      try {
+        await _audioRecorder?.stop();
+      } catch (_) {}
+      await _closeWav();
+      rethrow;
+    }
   }
 
   Future<String> stopListening() async {
-    if (!_listening && _session == null) return '';
+    if (!_listening && _session == null && _wavSink == null) return '';
+    _epoch++;
     _listening = false;
 
     try {
@@ -362,19 +463,40 @@ class WhisperSpeechService {
       try {
         await _audioRecorder?.stop();
       } catch (_) {}
+      await _closeWav();
 
-      final text = (await _session?.stop())?.trim() ?? '';
+      final session = _session;
+      _session = null;
+      final text = preferSpokenTranscript(
+        (await session?.stop()) ?? '',
+        _latestPartial,
+      );
       await _partialSub?.cancel();
       _partialSub = null;
-      _session = null;
       if (text.isNotEmpty) onResult?.call(text);
       return text;
     } catch (_) {
+      await _partialSub?.cancel();
+      _partialSub = null;
       _session = null;
+      await _closeWav();
       onError?.call();
-      return '';
+      rethrow;
     }
   }
+
+  Future<void> _closeWav() async {
+    final sink = _wavSink;
+    _wavSink = null;
+    _pendingPcm.clear();
+    if (sink == null) return;
+    try {
+      await sink.flush();
+      await sink.close();
+    } catch (_) {}
+  }
+
+  Future<void> fixWavHeader(String path) => repairWavHeader(path);
 
   Future<String> transcribeWav(
     String audioPath, {
@@ -387,16 +509,16 @@ class WhisperSpeechService {
     final lang = _languageFor(specialist, override: language);
     final toEnglish = _translateFor(specialist, override: translate);
     onProgress?.call(0);
-    final response = await whisperTranscribeWav(
+    final response = await sherpaTranscribeWav(
       wavPath: audioPath,
-      model: _pathsIn(dir),
+      model: _pathsIn(dir, repo: specialist?.onnxRepo),
       language: lang,
       translate: toEnglish,
     );
     onProgress?.call(100);
     final text = response['text'];
     if (text is! String) {
-      throw Exception(response['message'] ?? 'Whisper transcription failed');
+      throw Exception(response['message'] ?? 'Sherpa transcription failed');
     }
     return text.trim();
   }
@@ -420,5 +542,76 @@ class WhisperSpeechService {
       await _audioRecorder?.dispose();
     } catch (_) {}
     _audioRecorder = null;
+  }
+}
+
+void writeWavHeader(IOSink sink, int dataLength) {
+  const int sampleRate = 16000;
+  const int channels = 1;
+  const int bitsPerSample = 16;
+  final int byteRate = sampleRate * channels * bitsPerSample ~/ 8;
+  final int blockAlign = channels * bitsPerSample ~/ 8;
+
+  final header = ByteData(44);
+  header.setUint8(0, 0x52); // R
+  header.setUint8(1, 0x49); // I
+  header.setUint8(2, 0x46); // F
+  header.setUint8(3, 0x46); // F
+  header.setUint32(4, 36 + dataLength, Endian.little);
+  header.setUint8(8, 0x57); // W
+  header.setUint8(9, 0x41); // A
+  header.setUint8(10, 0x56); // V
+  header.setUint8(11, 0x45); // E
+  header.setUint8(12, 0x66); // f
+  header.setUint8(13, 0x6d); // m
+  header.setUint8(14, 0x74); // t
+  header.setUint8(15, 0x20); // (space)
+  header.setUint32(16, 16, Endian.little);
+  header.setUint16(20, 1, Endian.little); // PCM
+  header.setUint16(22, channels, Endian.little);
+  header.setUint32(24, sampleRate, Endian.little);
+  header.setUint32(28, byteRate, Endian.little);
+  header.setUint16(32, blockAlign, Endian.little);
+  header.setUint16(34, bitsPerSample, Endian.little);
+  header.setUint8(36, 0x64); // d
+  header.setUint8(37, 0x61); // a
+  header.setUint8(38, 0x74); // t
+  header.setUint8(39, 0x61); // a
+  header.setUint32(40, dataLength, Endian.little);
+
+  sink.add(header.buffer.asUint8List());
+}
+
+/// Creates [path] and flushes a 44-byte WAV header so the file exists
+/// before the recognizer finishes loading.
+Future<IOSink> openPlaceholderWav(String path) async {
+  final file = File(path);
+  if (file.existsSync()) file.deleteSync();
+  final parent = file.parent;
+  if (!parent.existsSync()) parent.createSync(recursive: true);
+  final sink = file.openWrite();
+  writeWavHeader(sink, 0);
+  await sink.flush();
+  return sink;
+}
+
+/// Rewrites a live-recording WAV so players see the PCM that follows the
+/// placeholder header. A valid file is left unchanged.
+Future<void> repairWavHeader(String path) async {
+  final file = File(path);
+  if (!file.existsSync()) {
+    throw StateError('Fichier audio introuvable');
+  }
+  final bytes = await file.readAsBytes();
+  if (bytes.length <= 44) {
+    throw StateError('Audio vide');
+  }
+  if (patchPlaceholderWavHeader(bytes)) {
+    await file.writeAsBytes(bytes, flush: true);
+    return;
+  }
+  final info = WavPcmInfo.parse(bytes);
+  if (info.dataByteCount <= 0) {
+    throw StateError('Audio vide');
   }
 }

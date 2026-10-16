@@ -75,3 +75,19 @@ class WavPcmInfo {
     );
   }
 }
+
+/// Fills RIFF and data sizes on the 44-byte placeholder header written while
+/// recording. Returns false when [bytes] is not that header or already matches
+/// the file length. Does not append bytes.
+bool patchPlaceholderWavHeader(Uint8List bytes) {
+  if (bytes.length < 44) return false;
+  if (String.fromCharCodes(bytes.sublist(36, 40)) != 'data') return false;
+  final bd = ByteData.sublistView(bytes);
+  final dataLength = bytes.length - 44;
+  final riffOk = bd.getUint32(4, Endian.little) == bytes.length - 8;
+  final dataOk = bd.getUint32(40, Endian.little) == dataLength;
+  if (riffOk && dataOk) return false;
+  bd.setUint32(4, bytes.length - 8, Endian.little);
+  bd.setUint32(40, dataLength, Endian.little);
+  return true;
+}

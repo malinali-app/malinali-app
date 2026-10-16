@@ -24,16 +24,30 @@ class WhisperOnnxRepo {
     this.encoderFile = 'encoder.int8.onnx',
     this.decoderFile = 'decoder.int8.onnx',
     this.tokensFile = 'tokens.txt',
+    this.joinerFile,
+    this.modelType = 'whisper',
+    this.sherpaModelType = '',
   });
 
   final String repoId;
   final String encoderFile;
   final String decoderFile;
   final String tokensFile;
+  final String? joinerFile;
+  final String modelType;
+
+  /// Value passed to sherpa-onnx `OnlineModelConfig.modelType`.
+  /// Empty lets sherpa read the type from the ONNX metadata.
+  final String sherpaModelType;
 
   String get baseUrl => 'https://huggingface.co/$repoId/resolve/main';
 
-  List<String> get files => [encoderFile, decoderFile, tokensFile];
+  List<String> get files => [
+    encoderFile,
+    decoderFile,
+    tokensFile,
+    if (joinerFile != null) joinerFile!,
+  ];
 
   String urlFor(String fileName) => '$baseUrl/$fileName';
 }
@@ -118,7 +132,9 @@ const List<WhisperSpecialistPack> kWhisperSpecialistPacks = [
     labelFr: 'Swahili (small)',
     iso: 'sw',
     whisperLang: 'sw',
-    onnxRepo: WhisperOnnxRepo(repoId: 'malinali-app/whisper-swahili-small-onnx'),
+    onnxRepo: WhisperOnnxRepo(
+      repoId: 'malinali-app/whisper-swahili-small-onnx',
+    ),
     downloadSizeHint: 'environ 180 Mo',
     hasMarianOutbound: false,
     upstreamRepo: 'PaschalK/whisper-swahili-small',
@@ -150,6 +166,7 @@ const List<WhisperSpecialistPack> kWhisperSpecialistPacks = [
     id: 'wolof-small',
     labelFr: 'Wolof (small)',
     iso: 'wo',
+    // No <|wo|> token; English prompt (kept for tooling — not a voice source).
     whisperLang: 'en',
     onnxRepo: WhisperOnnxRepo(repoId: 'malinali-app/whisper-small-wolof-onnx'),
     downloadSizeHint: 'environ 180 Mo',
@@ -181,6 +198,41 @@ const List<WhisperSpecialistPack> kWhisperSpecialistPacks = [
     unavailableReason:
         'Licence CC-BY-NC-4.0 et dépôt gated : pas de republication '
         'dans malinali-app.',
+  ),
+  WhisperSpecialistPack(
+    id: 'icefall-en',
+    labelFr: 'Anglais (Kroko)',
+    iso: 'en',
+    whisperLang: 'en',
+    downloadSizeHint: 'environ 68 Mo',
+    hasMarianOutbound: true,
+    upstreamRepo: 'Banafo/Kroko-ASR (CC-BY-SA)',
+    onnxRepo: WhisperOnnxRepo(
+      repoId: 'csukuangfj/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06',
+      encoderFile: 'encoder.onnx',
+      decoderFile: 'decoder.onnx',
+      joinerFile: 'joiner.onnx',
+      tokensFile: 'tokens.txt',
+      modelType: 'transducer',
+      sherpaModelType: 'zipformer2',
+    ),
+  ),
+  WhisperSpecialistPack(
+    id: 'icefall-fr',
+    labelFr: 'Français (Icefall)',
+    iso: 'fr',
+    whisperLang: 'fr',
+    downloadSizeHint: 'environ 150 Mo',
+    hasMarianOutbound: true,
+    upstreamRepo: 'shaojieli/sherpa-onnx-streaming-zipformer-fr-2023-04-14',
+    onnxRepo: WhisperOnnxRepo(
+      repoId: 'shaojieli/sherpa-onnx-streaming-zipformer-fr-2023-04-14',
+      encoderFile: 'encoder-epoch-29-avg-9-with-averaged-model.int8.onnx',
+      decoderFile: 'decoder-epoch-29-avg-9-with-averaged-model.int8.onnx',
+      joinerFile: 'joiner-epoch-29-avg-9-with-averaged-model.int8.onnx',
+      tokensFile: 'tokens.txt',
+      modelType: 'transducer',
+    ),
   ),
 ];
 

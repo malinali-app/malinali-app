@@ -14,10 +14,11 @@ class AppSourceLanguage {
   final String nameEn;
 }
 
+/// Spoken sources for voice onboarding. Wolof is a **target** only (EN/FR→WO);
+/// WO→EN/FR vocal quality is not offered.
 const List<AppSourceLanguage> kSupportedSourceLanguages = [
   AppSourceLanguage(iso: 'en', name: 'English', nameEn: 'English'),
   AppSourceLanguage(iso: 'fr', name: 'Français', nameEn: 'French'),
-  AppSourceLanguage(iso: 'wo', name: 'Wolof', nameEn: 'Wolof'),
 ];
 
 /// Target language option shown in the language picker.
@@ -58,7 +59,7 @@ List<TargetLanguageOption> getAvailableTargetLanguages({
 
   // Rule 1: Low-resource language (Wolof or others) -> strictly French & English
   if (src != 'fr' && src != 'en') {
-    return const [
+    return _sortedByName(const [
       TargetLanguageOption(
         iso: 'fr',
         name: 'Français',
@@ -70,7 +71,7 @@ List<TargetLanguageOption> getAvailableTargetLanguages({
         nameEn: 'English',
         qualityHint: 'BLEU 68.5 / 100',
       ),
-    ];
+    ]);
   }
 
   final List<TargetLanguageOption> targets = [];
@@ -132,5 +133,24 @@ List<TargetLanguageOption> getAvailableTargetLanguages({
     ));
   }
 
-  return targets;
+  return _sortedByName(targets);
+}
+
+/// Default pick after a source change: Wolof, then French, then English.
+String? preferredTargetIso(List<TargetLanguageOption> targets) {
+  const preferred = ['wo', 'fr', 'en'];
+  for (final iso in preferred) {
+    for (final target in targets) {
+      if (target.iso == iso) return target.iso;
+    }
+  }
+  return targets.isNotEmpty ? targets.first.iso : null;
+}
+
+List<TargetLanguageOption> _sortedByName(List<TargetLanguageOption> targets) {
+  final out = List<TargetLanguageOption>.from(targets);
+  out.sort(
+    (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+  );
+  return out;
 }

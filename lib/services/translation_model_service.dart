@@ -709,9 +709,11 @@ class TranslationModelService {
       // Check for at least one tokenizer file
       final tokenizer = File(p.join(modelDir.path, 'tokenizer.json'));
       final tokenizerEnc = File(p.join(modelDir.path, 'tokenizer-enc.json'));
+      final tokenizerDec = File(p.join(modelDir.path, 'tokenizer-dec.json'));
       
       final hasTokenizer = (await tokenizer.exists() && await tokenizer.length() > 0) ||
-                           (await tokenizerEnc.exists() && await tokenizerEnc.length() > 0);
+                           ((await tokenizerEnc.exists() && await tokenizerEnc.length() > 0) &&
+                            (await tokenizerDec.exists() && await tokenizerDec.length() > 0));
       
       return hasTokenizer;
     } catch (_) {

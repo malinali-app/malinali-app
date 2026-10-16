@@ -17,6 +17,7 @@ class OnboardingFlow extends StatefulWidget {
     this.modelService,
     this.whisperService,
     this.resolver = const VoiceSpeechResolver(),
+    this.isOnline,
   });
 
   final VoicePreferencesStore store;
@@ -24,6 +25,9 @@ class OnboardingFlow extends StatefulWidget {
   final TranslationModelService? modelService;
   final WhisperSpeechService? whisperService;
   final VoiceSpeechResolver resolver;
+
+  /// Overrides the connectivity check. Production uses [isConnected].
+  final Future<bool> Function()? isOnline;
 
   @override
   State<OnboardingFlow> createState() => _OnboardingFlowState();
@@ -62,7 +66,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
       _sourceIso = iso;
       // Auto-select the first available target for this source
       final targets = getAvailableTargetLanguages(sourceIso: iso);
-      _targetIso = targets.isNotEmpty ? targets.first.iso : null;
+      _targetIso = preferredTargetIso(targets);
       _currentPage = 1;
     });
     _pageController.animateToPage(
@@ -105,11 +109,11 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   VoicePreferences _buildPreferences() {
     final src = _sourceIso ?? 'fr';
     final tgt = _targetIso ?? (src == 'wo' ? 'fr' : 'wo');
-    return VoicePreferences(
+    // Same fast speech default as release setup, so the download step
+    // fetches the pack the microphone will actually open.
+    return VoicePreferences.defaults.copyWith(
       sourceIso: src,
       targetIso: tgt,
-      whisperSize: VoiceWhisperSize.quality,
-      appLanguageIso: 'fr',
       targetLanguages: [tgt],
     );
   }
@@ -145,6 +149,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
               pipeline: _pipeline,
               resolver: widget.resolver,
               onBack: _goBack,
+              isOnline: widget.isOnline,
             )
           else
             const SizedBox.shrink(),
@@ -498,6 +503,7 @@ class _ModelDownloadStep extends StatefulWidget {
     required this.pipeline,
     required this.resolver,
     required this.onBack,
+    this.isOnline,
   });
 
   final VoicePreferences prefs;
@@ -505,6 +511,13 @@ class _ModelDownloadStep extends StatefulWidget {
   final VoiceTurnPipeline pipeline;
   final VoiceSpeechResolver resolver;
   final VoidCallback onBack;
+  final Future<bool> Function()? isOnline;
+
+  Future<bool> _online() {
+    final check = isOnline;
+    if (check != null) return check();
+    return isConnected;
+  }
 
   @override
   State<_ModelDownloadStep> createState() => _ModelDownloadStepState();
@@ -544,7 +557,7 @@ class _ModelDownloadStepState extends State<_ModelDownloadStep> {
     }
 
     // Model is not available locally. Check connectivity before attempting fetch.
-    final online = await isConnected;
+    final online = await widget._online();
     if (!online) {
       if (!mounted) return;
       setState(() {
@@ -559,7 +572,7 @@ class _ModelDownloadStepState extends State<_ModelDownloadStep> {
 
   Future<void> _startDownload() async {
     // Check connectivity again immediately before fetching
-    final online = await isConnected;
+    final online = await widget._online();
     if (!online) {
       if (!mounted) return;
       setState(() {
@@ -589,6 +602,15 @@ class _ModelDownloadStepState extends State<_ModelDownloadStep> {
       );
 
       if (!mounted) return;
+      if (!await widget.pipeline.modelsReady(_plan)) {
+        setState(() {
+          _downloading = false;
+          _error = 'Les modèles de cette paire ne sont pas prêts.';
+          _status = null;
+          _progress = null;
+        });
+        return;
+      }
       await _finish();
     } catch (e) {
       if (!mounted) return;
@@ -619,9 +641,13 @@ class _ModelDownloadStepState extends State<_ModelDownloadStep> {
 
   @override
   Widget build(BuildContext context) {
+    final online = _buildOnlineContent();
+    if (widget.isOnline != null) {
+      return SafeArea(child: online);
+    }
     return SafeArea(
       child: ConnectivityFutureBuilder(
-        _buildOnlineContent(),
+        online,
         _buildOfflineWidget(),
       ),
     );

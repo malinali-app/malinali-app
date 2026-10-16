@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:malinali/pages/onboarding_page.dart';
 import 'package:malinali/services/voice_preferences.dart';
@@ -47,7 +48,19 @@ class _FakePipeline extends Fake implements VoiceTurnPipeline {
 }
 
 void main() {
-  testWidgets('Screen 1 shows simple language picker with English, Français, Wolof (no flags)', (tester) async {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    for (final name in [
+      'dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle',
+      'dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.isEnabled',
+    ]) {
+      messenger.setMockMessageHandler(name, (_) async => null);
+    }
+  });
+  testWidgets('Screen 1 shows English and Français only (no Wolof source)', (tester) async {
     final store = _MockStore();
     final pipeline = _FakePipeline(isReady: true);
 
@@ -64,46 +77,15 @@ void main() {
     expect(find.text('Malinali'), findsOneWidget);
     expect(find.text('Choisissez votre langue'), findsOneWidget);
 
-    // 3 language options
     expect(find.text('English'), findsOneWidget);
     expect(find.text('Français'), findsOneWidget);
-    expect(find.text('Wolof'), findsOneWidget);
+    // Wolof is a target only, not a spoken source.
+    expect(find.text('Wolof'), findsNothing);
 
     // Country flags should NOT be present
     expect(find.text('🇫🇷'), findsNothing);
     expect(find.text('🇺🇸'), findsNothing);
     expect(find.text('🇸🇳'), findsNothing);
-  });
-
-  testWidgets('Wolof source allows only French and English targets', (tester) async {
-    final store = _MockStore();
-    final pipeline = _FakePipeline(isReady: true);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: OnboardingFlow(
-          store: store,
-          pipeline: pipeline,
-        ),
-      ),
-    );
-
-    // Select Wolof
-    await tester.tap(find.text('Wolof'));
-    await tester.pumpAndSettle();
-
-    // Verify target screen
-    expect(find.text('Langue de traduction'), findsOneWidget);
-
-    // Should only have Français and English
-    expect(find.text('Français'), findsOneWidget);
-    expect(find.text('English'), findsOneWidget);
-
-    // Subtitle has English names
-    expect(find.textContaining('French'), findsOneWidget);
-
-    // Continuer button should be present
-    expect(find.text('Continuer'), findsOneWidget);
   });
 
   testWidgets('French source shows English, Wolof, and African languages with BLEU >= 30', (tester) async {
@@ -195,12 +177,11 @@ void main() {
     await tester.tap(find.text('launch'));
     await tester.pumpAndSettle();
 
-    // Select Wolof as source
-    await tester.tap(find.text('Wolof'));
+    // Select Français as source, Wolof as target
+    await tester.tap(find.text('Français'));
     await tester.pumpAndSettle();
 
-    // Select Français as target and continue
-    await tester.tap(find.text('Français'));
+    await tester.tap(find.text('Wolof'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Continuer'));
@@ -208,10 +189,69 @@ void main() {
 
     // Model was ready, so it should finish and pop
     expect(popped, isNotNull);
-    expect(popped!.sourceIso, 'wo');
-    expect(popped!.targetIso, 'fr');
-    expect(store.saved?.sourceIso, 'wo');
-    expect(store.saved?.targetIso, 'fr');
+    expect(popped!.sourceIso, 'fr');
+    expect(popped!.targetIso, 'wo');
+    expect(store.saved?.sourceIso, 'fr');
+    expect(store.saved?.targetIso, 'wo');
+    expect(store.saved?.useFastSttForEnFr, isTrue);
+  });
+
+  testWidgets('does not leave onboarding when models are still missing', (
+    tester,
+  ) async {
+    final store = _MockStore();
+    final pipeline = _FakePipeline(isReady: false);
+
+    VoicePreferences? popped;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              popped = await Navigator.push<VoicePreferences>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => OnboardingFlow(
+                    store: store,
+                    pipeline: pipeline,
+                    isOnline: () async => true,
+                  ),
+                ),
+              );
+            },
+            child: const Text('launch'),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('launch'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('English'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Wolof'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(find.text('Wolof'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Continuer'));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+
+    expect(popped, isNull);
+    expect(find.text('launch'), findsNothing);
+    expect(store.saved, isNull);
+    expect(pipeline.ensureCalled, isTrue);
+    expect(find.text('Erreur de téléchargement'), findsOneWidget);
+    expect(
+      find.text('Les modèles de cette paire ne sont pas prêts.'),
+      findsOneWidget,
+    );
+    expect(pipeline.ensureCalled, isTrue);
   });
 
   testWidgets('Target step uses SingleChildScrollView and keeps Continuer button clickable', (tester) async {
@@ -227,8 +267,7 @@ void main() {
       ),
     );
 
-    // Select Wolof
-    await tester.tap(find.text('Wolof'));
+    await tester.tap(find.text('Français'));
     await tester.pumpAndSettle();
 
     // Verify SingleChildScrollView is present

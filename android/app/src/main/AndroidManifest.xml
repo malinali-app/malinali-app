@@ -8,6 +8,7 @@
         android:label="malinali"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:extractNativeLibs="false"
         android:largeHeap="true">
         <activity
             android:name=".MainActivity"
@@ -36,7 +37,7 @@
             </intent-filter>
 
             <!-- Share target: WhatsApp voice notes / audio (ACTION_SEND). -->
-            <intent-filter android:label="Transcrire avec Malinali">
+            <intent-filter android:label="Traduire avec Malinali">
                 <action android:name="android.intent.action.SEND"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="audio/*"/>
@@ -45,7 +46,7 @@
             </intent-filter>
 
             <!-- WhatsApp sometimes tags shares with a generic MIME; accept and filter in MainActivity. -->
-            <intent-filter android:label="Transcrire avec Malinali">
+            <intent-filter android:label="Traduire avec Malinali">
                 <action android:name="android.intent.action.SEND"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="*/*"/>

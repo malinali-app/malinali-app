@@ -52,6 +52,12 @@ void main() {
       expect(isos, isNot(contains('ti'))); // Tigrinya BLEU 25.3 (< 30)
     });
 
+    test('targets are sorted alphabetically by display name', () {
+      final targets = getAvailableTargetLanguages(sourceIso: 'en');
+      final names = targets.map((t) => t.name.toLowerCase()).toList();
+      expect(names, List<String>.from(names)..sort());
+    });
+
     test('Subtitles have English names and BLEU hints', () {
       final targets = getAvailableTargetLanguages(sourceIso: 'fr');
       for (final t in targets) {

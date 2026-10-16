@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:languages_dart/languages_dart.dart';
+import 'package:malinali/services/wolof_spanish_phonetics.dart';
 
 class TtsService {
   final FlutterTts _flutterTts = FlutterTts();
@@ -24,6 +25,7 @@ class TtsService {
     'ja', // Japanese
     'ko', // Korean
     'sw', // Swahili (often supported by Google)
+    'wo', // Wolof: spoken with a Spanish voice + phonetic rewrite
   };
 
   Future<void> init() async {
@@ -56,7 +58,9 @@ class TtsService {
 
   /// Returns true if the language is in our high-confidence whitelist.
   bool isLanguageWellSupported(String iso) {
-    return _wellSupportedIsos.contains(iso.toLowerCase());
+    final code = iso.toLowerCase();
+    if (code == 'wol') return _wellSupportedIsos.contains('wo');
+    return _wellSupportedIsos.contains(code);
   }
 
   /// Attempts to speak [text] in the given [language].
@@ -66,8 +70,16 @@ class TtsService {
     if (!await isAvailable()) return false;
     await init();
 
-    final langCode = await _resolveEngineLanguage(language);
-    
+    var spoken = text;
+    var engineLanguage = language;
+    final iso = language.localeIntl.locale.languageCode.toLowerCase();
+    if (iso == 'wo' || iso == 'wol') {
+      spoken = wolofToSpanishPhonetics(text);
+      engineLanguage = Languages.spanish;
+    }
+
+    final langCode = await _resolveEngineLanguage(engineLanguage);
+
     try {
       final dynamic setResult = await _flutterTts.setLanguage(langCode);
       final applied = setResult == true || setResult == 1;
@@ -75,7 +87,7 @@ class TtsService {
         debugPrint('TTS: Language $langCode not supported on this device.');
         return false;
       }
-      await _flutterTts.speak(text);
+      await _flutterTts.speak(spoken);
       return true;
     } catch (e) {
       debugPrint('TTS Speak Error: $e');
@@ -129,6 +141,8 @@ class TtsService {
 
   List<String> _preferredTtsTags(String iso) {
     switch (iso) {
+      case 'wo':
+        return const ['es-ES', 'es-MX', 'es'];
       case 'fr':
         return const ['fr-FR', 'fr-CA', 'fr'];
       case 'en':

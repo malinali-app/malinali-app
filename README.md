@@ -5,6 +5,11 @@ Offline voice and text translation for African / low-resource languages
 
 ## Voice home
 
+The Wolof to french/english translation is terrible (same for source low resource language)
+The MarianMT model is actually decent, but the wording is so bad, so different that it goes astray.
+Only use English or French as source.
+
+
 The app opens on a WhatsApp-style **conversation** screen.
 
 1. **First launch**: pick source language (**English**, **Français**, or **Wolof**), pick target language, and download the on-device model (with network check and wakelock during download).
@@ -25,8 +30,8 @@ All inference runs 100% on-device (Whisper STT unloads before MarianMT loads to 
 |--------|--------|------------------|----------------|
 | **Wolof (`wo`)** | **English (`en`)** | `malinali-app/traduction-wolof-en` (LocaleNLP fine-tune) | **BLEU 68.5** |
 | **Wolof (`wo`)** | **French (`fr`)** | **Cascade**: `wo → en` (`traduction-wolof-en`) then `en → fr` (`Xenova/opus-mt-en-fr`) | **BLEU ~28–35** (no direct `wo→fr` Marian model exists) |
-| **French (`fr`)** | **English (`en`)** | Voice: [`malinali-app/opus-mt_tiny_fra-eng-onnx`](https://huggingface.co/malinali-app/opus-mt_tiny_fra-eng-onnx). Written catalog may still list Xenova/Helsinki Candle packs. | BLEU ~40+ |
-| **French (`fr`)** | **Wolof (`wo`)** | **Cascade**: `fr → en` (`Xenova/opus-mt-fr-en`) then `en → wo` (`traduction-en-wolof` / [`LocaleNLP/eng_wolof`](https://huggingface.co/LocaleNLP/eng_wolof), prefix `>>wol<< `) | EN→WO **BLEU 76.1** (direct `traduction-fr-wolof` is BLEU 9.3, not used for voice/auto) |
+| **French (`fr`)** | **English (`en`)** | Voice: [`malinali-app/opus-mt-fr-en-onnx`](https://huggingface.co/malinali-app/opus-mt-fr-en-onnx) (standard Helsinki `opus-mt-fr-en`). Written boot may still use the tiny pack. | BLEU ~40+ |
+| **French (`fr`)** | **Wolof (`wo`)** | **Cascade**: `fr → en` ([`malinali-app/opus-mt-fr-en-onnx`](https://huggingface.co/malinali-app/opus-mt-fr-en-onnx)) then `en → wo` (`traduction-en-wolof` / [`LocaleNLP/eng_wolof`](https://huggingface.co/LocaleNLP/eng_wolof), prefix `>>wol<< `) | EN→WO **BLEU 76.1** (direct `traduction-fr-wolof` is BLEU 9.3, not used for voice/auto) |
 | **French (`fr`)** | **African languages** | Helsinki bilaterals with **BLEU ≥ 30** (e.g. Lingála `opus-mt-fr-ln` BLEU 30.5) | BLEU ≥ 30 |
 | **English (`en`)** | **French (`fr`)** | `Xenova/opus-mt-en-fr` | BLEU ~43.0 |
 | **English (`en`)** | **Wolof (`wo`)** | `malinali-app/traduction-en-wolof` (prefix `>>wol<< `) | **BLEU 76.1** |
@@ -117,7 +122,7 @@ Catalogue size: **~110+ bilateral pairs**, **~40 languages** (varies with HF dis
 - **Voice boot**: no Marian download until the voice pair or Traduction écrite needs one. Voice defaults Wolof→French: Whisper [`M9and2M/whisper-small-wolof`](https://huggingface.co/M9and2M/whisper-small-wolof) as [`malinali-app/whisper-small-wolof-onnx`](https://huggingface.co/malinali-app/whisper-small-wolof-onnx) (sherpa-onnx int8, prompted with English — Whisper has no `<|wo|>` token), then `malinali-app/traduction-wolof-en`, then `Xenova/opus-mt-en-fr`.
 - **Written last model**: restored from `last_selected_model.json` when opening Traduction écrite; otherwise tiny Helsinki FR→EN.
 - **French → Pulaar**: select in translation settings; downloads `flutter-painter/french-fula`.
-- **French → Wolof** (voice / auto): same English-bridge pattern as Wolof→French. Transcribe French, Marian `Xenova/opus-mt-fr-en`, then `malinali-app/traduction-en-wolof` (Candle pack of [`LocaleNLP/eng_wolof`](https://huggingface.co/LocaleNLP/eng_wolof), prefix `>>wol<< `). The direct pack `malinali-app/traduction-fr-wolof` (BLEU 9.3, [`makhtar7186/traduction_fr_wolof`](https://huggingface.co/makhtar7186/traduction_fr_wolof)) remains in the written catalogue but is not the voice route.
+- **French → Wolof** (voice / auto): same English-bridge pattern as Wolof→French. Transcribe French, Marian [`malinali-app/opus-mt-fr-en-onnx`](https://huggingface.co/malinali-app/opus-mt-fr-en-onnx) (standard `opus-mt-fr-en`, not the tiny pack), then `malinali-app/traduction-en-wolof` (Candle pack of [`LocaleNLP/eng_wolof`](https://huggingface.co/LocaleNLP/eng_wolof), prefix `>>wol<< `). The direct pack `malinali-app/traduction-fr-wolof` (BLEU 9.3, [`makhtar7186/traduction_fr_wolof`](https://huggingface.co/makhtar7186/traduction_fr_wolof)) remains in the written catalogue but is not the voice route.
 - **English → Wolof**: select in translation settings or as a voice target; downloads `malinali-app/traduction-en-wolof` (Candle pack of [`LocaleNLP/eng_wolof`](https://huggingface.co/LocaleNLP/eng_wolof)). Same convert path as the African Helsinki packs, plus a required `>>wol<< ` source prefix (`sourcePrefix` on the catalogue card). Republish with `python tools/publish_model_hf/publish_eng_wolof.py` (`--convert-only` to skip weights / upload).
 - **Wolof → English**: voice source Wolof downloads `malinali-app/traduction-wolof-en` (Candle pack of [`LocaleNLP/localenlp-wol-eng-0.03`](https://huggingface.co/LocaleNLP/localenlp-wol-eng-0.03), fine-tune of opus-mt-mul-en; BLEU 68.5). No source prefix (`>>wol<<` is not in the vocab). Whisper `wolof-small` transcribes, then this pack translates to English. Republish with `python tools/publish_model_hf/publish_wol_eng.py`.
 - **African Helsinki bilaterals**: listed in Traduction écrite settings; OPUS BLEU as `xx.x / 100` (tap opens the BLEU paper).

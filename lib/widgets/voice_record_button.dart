@@ -20,14 +20,20 @@ class VoiceRecordButton extends StatefulWidget {
     super.key,
     required this.enabled,
     required this.onRecordingComplete,
+    this.onRecordingStart,
+    this.onRecordingCancel,
     this.maxDuration = const Duration(seconds: 30),
     this.audioRecorder,
+    this.useExternalRecording = false,
   });
 
   final bool enabled;
   final FutureOr<void> Function(String wavPath) onRecordingComplete;
+  final VoidCallback? onRecordingStart;
+  final VoidCallback? onRecordingCancel;
   final Duration maxDuration;
   final AudioRecorder? audioRecorder;
+  final bool useExternalRecording;
 
   @override
   State<VoiceRecordButton> createState() => _VoiceRecordButtonState();
@@ -149,21 +155,27 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
         return;
       }
       
-      final String dirPath = _recordingBaseDir ?? (await getApplicationDocumentsDirectory()).path;
-      final path = p.join(
-        dirPath,
-        'audio_${DateTime.now().millisecondsSinceEpoch}.wav',
-      );
-      
-      await _audioRecorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.wav,
-          numChannels: 1,
-          sampleRate: 16000,
-        ),
-        path: path,
-      );
-      _activePath = path;
+      if (widget.useExternalRecording) {
+        widget.onRecordingStart?.call();
+        _activePath = 'external'; // Placeholder
+      } else {
+        final String dirPath = _recordingBaseDir ?? (await getApplicationDocumentsDirectory()).path;
+        final path = p.join(
+          dirPath,
+          'audio_${DateTime.now().millisecondsSinceEpoch}.wav',
+        );
+        
+        await _audioRecorder.start(
+          const RecordConfig(
+            encoder: AudioEncoder.wav,
+            numChannels: 1,
+            sampleRate: 16000,
+          ),
+          path: path,
+        );
+        widget.onRecordingStart?.call();
+        _activePath = path;
+      }
       _recordDuration = 0;
       _startTimer();
       _maxTimer?.cancel();
@@ -180,10 +192,13 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
 
   Future<String?> _stop() async {
     _maxTimer?.cancel();
-    if (_recordState == RecordState.stop) {
+    if (_recordState == RecordState.stop && !widget.useExternalRecording) {
       return _activePath;
     }
     try {
+      if (widget.useExternalRecording) {
+        return _activePath;
+      }
       final path = await _audioRecorder.stop();
       return path ?? _activePath;
     } catch (e) {
@@ -191,6 +206,7 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
       return _activePath;
     }
   }
+
 
   void _startTimer() {
     _timer?.cancel();
@@ -207,7 +223,10 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
   bool _isLockedGesture(Offset local) => local.dy < -35;
 
   Future<void> _cancelRecording() async {
-    if (_recordState == RecordState.stop && _activePath == null && !_isInitializing) return;
+    if (_recordState == RecordState.stop &&
+        _activePath == null &&
+        !_isInitializing &&
+        !widget.useExternalRecording) return;
     HapticFeedback.mediumImpact();
     setState(() {
       _showLottie = true;
@@ -215,7 +234,7 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
     });
     await _stop();
     final path = _activePath;
-    if (path != null) {
+    if (path != null && !widget.useExternalRecording) {
       try {
         final f = File(path);
         if (f.existsSync()) f.deleteSync();
@@ -224,6 +243,7 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
     _activePath = null;
     await Future<void>.delayed(const Duration(milliseconds: 400));
     if (!mounted) return;
+    widget.onRecordingCancel?.call();
     setState(() {
       _showLottie = false;
       _isLocked = false;
@@ -233,7 +253,10 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
   }
 
   Future<void> _finishRecording() async {
-    if (_recordState == RecordState.stop && _activePath == null && !_isInitializing) return;
+    if (_recordState == RecordState.stop &&
+        _activePath == null &&
+        !_isInitializing &&
+        !widget.useExternalRecording) return;
     HapticFeedback.lightImpact();
     final path = await _stop();
 
@@ -256,9 +279,14 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
       _activePath = null;
       return;
     }
+    
+    // For external recording, we might have started it but we don't have the final path here.
+    // However, _onRecordingComplete expects the path.
+    // In external mode, the caller (VoiceChatPage) will know where the file is.
     _activePath = null;
     await widget.onRecordingComplete(path);
   }
+
 
   String _formatNumber(int n) => n < 10 ? '0$n' : '$n';
 
@@ -440,8 +468,11 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton>
                 // If it was just a tap, we started recording in onLongPressDown.
                 // We should stop and delete it silently.
                 await _stop();
+                if (widget.useExternalRecording) {
+                  widget.onRecordingCancel?.call();
+                }
                 final path = _activePath;
-                if (path != null) {
+                if (path != null && !widget.useExternalRecording) {
                   try {
                     final f = File(path);
                     if (f.existsSync()) f.deleteSync();

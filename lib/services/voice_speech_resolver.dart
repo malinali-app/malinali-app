@@ -1,5 +1,6 @@
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/voice_preferences.dart';
+import 'package:malinali/services/vosk_model_service.dart';
 import 'package:malinali/services/whisper_specialist_models.dart';
 
 /// How speech reaches English for a voice turn.
@@ -15,6 +16,9 @@ enum VoiceSpeechStrategy {
 
   /// Generic multilingual Whisper with translate-to-English, then Marian English→target.
   genericTranslate,
+
+  /// Fast VOSK recognition (for FR/EN), then optional Marian bridge.
+  vosk,
 }
 
 /// Resolved models for one voice turn.
@@ -23,30 +27,38 @@ class VoiceSpeechPlan {
     required this.strategy,
     required this.whisperSize,
     required this.whisperLanguage,
+    required this.sourceIso,
     this.specialist,
     this.sourceToEnglish,
     this.englishToTarget,
+    this.voskModel,
   });
 
   final VoiceSpeechStrategy strategy;
   final VoiceWhisperSize whisperSize;
+  final String sourceIso;
 
   /// whisper.cpp language token. Never `auto` for a language Whisper knows.
-  /// Wolof has no `<|wo|>` token; the fine-tune is prompted with English.
+  /// Wolof has no `<|wo|>` token; the fine-tune is prompted with French.
   final String whisperLanguage;
 
   final WhisperSpecialistPack? specialist;
   final TranslationModel? sourceToEnglish;
   final TranslationModel? englishToTarget;
+  final VoskModel? voskModel;
 
   WhisperModel get genericModel => whisperSize.model;
 
   bool get usesSpecialist => specialist != null;
 
+  /// Generic Whisper is what the mic loads when this plan has no specialist
+  /// and is not Vosk. Direct and cascade plans are included, so a missing
+  /// speech model cannot look ready.
   bool get needsGenericWhisper =>
-      strategy == VoiceSpeechStrategy.genericTranslate ||
-      (strategy == VoiceSpeechStrategy.englishOutputFineTune &&
-          specialist == null);
+      specialist == null &&
+      !(strategy == VoiceSpeechStrategy.vosk && voskModel != null);
+
+  bool get needsVosk => strategy == VoiceSpeechStrategy.vosk;
 
   bool get translateToEnglish =>
       strategy == VoiceSpeechStrategy.genericTranslate ||
@@ -70,6 +82,43 @@ class VoiceSpeechResolver {
     final sourceIso = prefs.sourceIso.toLowerCase();
     final targetIso = prefs.targetIso.toLowerCase();
 
+    // Spoken French: generic Whisper tiny/small with task=translate, so the
+    // transcript is already English. No French→English Marian hop.
+    if (sourceIso == 'fr') {
+      final englishToTarget = targetIso == 'en' || targetIso == sourceIso
+          ? null
+          : curatedMarianForPair(sourceIso: 'en', targetIso: targetIso);
+      return VoiceSpeechPlan(
+        strategy: VoiceSpeechStrategy.genericTranslate,
+        whisperSize: prefs.whisperSize,
+        sourceIso: sourceIso,
+        whisperLanguage: 'fr',
+        englishToTarget: englishToTarget,
+      );
+    }
+
+    // Fast Zipformer is English speech only, and not for English→French.
+    final fastEnglish = prefs.useFastSttForEnFr &&
+        sourceIso == 'en' &&
+        targetIso != 'fr';
+    if (fastEnglish) {
+      final pack = whisperSpecialistById('icefall-en');
+      if (pack != null && pack.isDownloadable) {
+        final englishToTarget = targetIso == 'en'
+            ? null
+            : curatedMarianForPair(sourceIso: 'en', targetIso: targetIso);
+
+        return VoiceSpeechPlan(
+          strategy: VoiceSpeechStrategy.genericTranslate,
+          whisperSize: prefs.whisperSize,
+          sourceIso: sourceIso,
+          whisperLanguage: sourceIso,
+          specialist: pack,
+          englishToTarget: englishToTarget,
+        );
+      }
+    }
+
     // No downloadable fine-tune: generic Whisper emits English, then Marian
     // English→target. There is no source transcript to feed a wo→* model.
     if (sourceIso == 'wo' && _downloadablePackForIso(sourceIso) == null) {
@@ -79,7 +128,8 @@ class VoiceSpeechResolver {
       return VoiceSpeechPlan(
         strategy: VoiceSpeechStrategy.genericTranslate,
         whisperSize: prefs.whisperSize,
-        whisperLanguage: 'en',
+        sourceIso: sourceIso,
+        whisperLanguage: 'fr',
         englishToTarget: englishToTarget,
       );
     }
@@ -88,10 +138,11 @@ class VoiceSpeechResolver {
     final directModel = curatedMarianForPair(sourceIso: sourceIso, targetIso: targetIso);
     if (directModel != null) {
       // We still need a Whisper pack to transcribe the source
-      final pack = _downloadablePackForIso(sourceIso);
+      final pack = _downloadablePackForIso(sourceIso, includeIcefall: fastEnglish);
       return VoiceSpeechPlan(
         strategy: VoiceSpeechStrategy.directTranslate,
         whisperSize: prefs.whisperSize,
+        sourceIso: sourceIso,
         whisperLanguage: _whisperLanguage(sourceIso, pack),
         specialist: pack,
         sourceToEnglish: directModel, // Using this field for source -> target
@@ -104,12 +155,16 @@ class VoiceSpeechResolver {
         ? null
         : curatedMarianForPair(sourceIso: 'en', targetIso: targetIso);
 
-    final pack = _downloadablePackForIso(sourceIso);
+    final pack = _downloadablePackForIso(
+      sourceIso,
+      includeIcefall: fastEnglish,
+    );
 
     if (pack != null && pack.emitsEnglish) {
       return VoiceSpeechPlan(
         strategy: VoiceSpeechStrategy.englishOutputFineTune,
         whisperSize: prefs.whisperSize,
+        sourceIso: sourceIso,
         whisperLanguage: _whisperLanguage(sourceIso, pack),
         specialist: pack,
         englishToTarget: englishToTarget,
@@ -125,6 +180,7 @@ class VoiceSpeechResolver {
         return VoiceSpeechPlan(
           strategy: VoiceSpeechStrategy.transcribeThenMarianToEnglish,
           whisperSize: prefs.whisperSize,
+          sourceIso: sourceIso,
           whisperLanguage: _whisperLanguage(sourceIso, pack),
           specialist: pack,
           sourceToEnglish: sourceToEnglish,
@@ -144,6 +200,7 @@ class VoiceSpeechResolver {
         return VoiceSpeechPlan(
           strategy: VoiceSpeechStrategy.transcribeThenMarianToEnglish,
           whisperSize: prefs.whisperSize,
+          sourceIso: sourceIso,
           whisperLanguage: _whisperLanguage(sourceIso, pack),
           specialist: pack,
           sourceToEnglish: sourceToEnglish,
@@ -155,6 +212,7 @@ class VoiceSpeechResolver {
     return VoiceSpeechPlan(
       strategy: VoiceSpeechStrategy.genericTranslate,
       whisperSize: prefs.whisperSize,
+      sourceIso: sourceIso,
       whisperLanguage: _whisperLanguage(sourceIso, pack),
       englishToTarget: englishToTarget,
     );
@@ -193,9 +251,10 @@ class VoiceSpeechResolver {
     'ha',
   };
 
-  WhisperSpecialistPack? _downloadablePackForIso(String iso) {
+  WhisperSpecialistPack? _downloadablePackForIso(String iso, {bool includeIcefall = false}) {
     for (final pack in kWhisperSpecialistPacks) {
       if (pack.iso.toLowerCase() == iso && pack.isDownloadable) {
+        if (pack.id.startsWith('icefall-') && !includeIcefall) continue;
         return pack;
       }
     }

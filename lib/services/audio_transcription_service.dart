@@ -212,7 +212,6 @@ class AudioTranscriptionService {
     return segments.join(' ').trim();
   }
 
-  @visibleForTesting
   static String extractTextFromVoskJson(String jsonResult) {
     try {
       final decoded = jsonDecode(jsonResult);
@@ -226,7 +225,6 @@ class AudioTranscriptionService {
     return '';
   }
 
-  @visibleForTesting
   static String extractPartialFromVoskJson(String jsonResult) {
     try {
       final decoded = jsonDecode(jsonResult);

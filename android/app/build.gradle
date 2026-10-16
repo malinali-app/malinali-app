@@ -49,11 +49,18 @@ android {
         externalNativeBuild {
             cmake {
                 arguments "-DANDROID_STL=c++_shared",
-                          "-DMARIAN_ONNX_BUILD_SHARED=ON"
+                          "-DMARIAN_ONNX_BUILD_SHARED=ON",
+                          "-DANDROID_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
                 // SentencePiece also defines spm_* tools. They need liblog and
                 // are not shipped. Build only the Marian FFI library.
                 targets "marian_onnx"
                 abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+            }
+        }
+
+        packagingOptions {
+            jniLibs {
+                useLegacyPackaging = false
             }
         }
     }
@@ -92,9 +99,32 @@ android {
 
 configurations.all {
     resolutionStrategy {
-        // Force JNA 5.15.0 or higher to resolve 16 KB page size compatibility issues.
+        // Force JNA 5.16.0 or higher to resolve 16 KB page size compatibility issues.
         // This fixes the crash on 16 KB devices caused by libjnidispatch.so.
-        force 'net.java.dev.jna:jna:5.15.0@aar'
+        force 'net.java.dev.jna:jna:5.16.0'
+    }
+}
+
+// Ensure all native dependencies (including plugins like sherpa_onnx)
+// are built with 16 KB page alignment and packaged correctly.
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty('android')) {
+            project.android {
+                if (project.android.hasProperty('externalNativeBuild')) {
+                    externalNativeBuild {
+                        cmake {
+                            arguments "-DANDROID_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
+                        }
+                    }
+                }
+                packagingOptions {
+                    jniLibs {
+                        useLegacyPackaging = false
+                    }
+                }
+            }
+        }
     }
 }
 

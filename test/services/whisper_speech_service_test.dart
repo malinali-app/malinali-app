@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:malinali/services/wav_pcm_info.dart';
 import 'package:malinali/services/whisper_speech_service.dart';
 import 'package:malinali/services/whisper_specialist_models.dart';
 import 'package:path/path.dart' as p;
@@ -92,11 +94,55 @@ void main() {
     await service.setActivePack(pack);
     expect(service.activeSpecialist?.id, 'swahili-small');
     expect(service.isDefaultTranslatePack, isFalse);
-    expect(service.engineId, 'whisper-swahili-small');
+    expect(service.engineId, 'sherpa-swahili-small');
     expect(await service.isModelPresent(), isTrue);
 
     await service.setActivePack(null);
     expect(service.isDefaultTranslatePack, isTrue);
     expect(service.engineId, 'whisper-tiny');
+  });
+
+  test('openPlaceholderWav creates the file before any audio arrives', () async {
+    final file = File(p.join(tempDocs.path, 'early.wav'));
+    final sink = await openPlaceholderWav(file.path);
+    expect(file.existsSync(), isTrue);
+    expect(await file.length(), 44);
+    await sink.close();
+  });
+
+  test('repairWavHeader patches the placeholder without growing the file', () async {
+    final file = File(p.join(tempDocs.path, 'live.wav'));
+    final header = ByteData(44);
+    void ascii(int offset, String value) {
+      for (var i = 0; i < value.length; i++) {
+        header.setUint8(offset + i, value.codeUnitAt(i));
+      }
+    }
+    ascii(0, 'RIFF');
+    ascii(8, 'WAVE');
+    ascii(12, 'fmt ');
+    header.setUint32(16, 16, Endian.little);
+    header.setUint16(20, 1, Endian.little);
+    header.setUint16(22, 1, Endian.little);
+    header.setUint32(24, 16000, Endian.little);
+    header.setUint32(28, 32000, Endian.little);
+    header.setUint16(32, 2, Endian.little);
+    header.setUint16(34, 16, Endian.little);
+    ascii(36, 'data');
+    final pcm = Uint8List(320);
+    for (var i = 0; i < pcm.length; i++) {
+      pcm[i] = i % 255;
+    }
+    await file.writeAsBytes([...header.buffer.asUint8List(), ...pcm]);
+    final before = await file.length();
+
+    await repairWavHeader(file.path);
+
+    final after = await file.readAsBytes();
+    expect(after.length, before);
+    final info = WavPcmInfo.parse(after);
+    expect(info.dataByteCount, 320);
+    expect(info.dataOffset, 44);
+    expect(after.sublist(44), pcm);
   });
 }

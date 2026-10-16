@@ -5,11 +5,11 @@ import 'package:malinali/services/malinali_audio_open_intent.dart';
 import 'package:malinali/utils/aptabase_bootstrap.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 
-void main() async {
+void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   sherpa_onnx.initBindings();
   await initAptabaseSkippingTestLab();
   await AppInfo.init();
-  await MalinaliAudioOpenIntent.instance.bootstrap();
+  await MalinaliAudioOpenIntent.instance.bootstrap(args: args);
   runApp(const MalinaliApp());
 }

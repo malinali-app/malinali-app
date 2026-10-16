@@ -3,16 +3,18 @@ import 'package:languages_dart/languages_dart.dart';
 import 'package:malinali/services/whisper_specialist_models.dart';
 
 void main() {
-  test('catalogue lists six packs with first-wave downloads', () {
-    expect(kWhisperSpecialistPacks, hasLength(6));
-    final downloadable =
-        kWhisperSpecialistPacks.where((p) => p.isDownloadable).toList();
-    expect(downloadable.map((p) => p.id), [
+  test('catalogue lists specialist packs with first-wave downloads', () {
+    expect(kWhisperSpecialistPacks, hasLength(8));
+    final fineTunes =
+        kWhisperSpecialistPacks
+            .where((p) => p.id.endsWith('-small') && p.isDownloadable)
+            .toList();
+    expect(fineTunes.map((p) => p.id), [
       'swahili-small',
       'yoruba-small',
       'wolof-small',
     ]);
-    for (final pack in downloadable) {
+    for (final pack in fineTunes) {
       expect(pack.onnxRepo?.repoId, contains('malinali-app/'));
       expect(pack.onnxRepo?.repoId, contains('-onnx'));
       expect(pack.translate, isFalse);
@@ -53,6 +55,24 @@ void main() {
     expect(whisperSpecialistById('yoruba-small')!.whisperLang, 'yo');
     expect(whisperSpecialistById('wolof-small')!.whisperLang, 'en');
     expect(whisperSpecialistById('wolof-small')!.translate, isFalse);
+  });
+
+  test('english fast STT downloads the Kroko streaming zipformer', () {
+    final en = whisperSpecialistById('icefall-en')!;
+    expect(en.labelFr, 'Anglais (Kroko)');
+    expect(en.upstreamRepo, 'Banafo/Kroko-ASR (CC-BY-SA)');
+    expect(
+      en.onnxRepo?.repoId,
+      'csukuangfj/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06',
+    );
+    expect(en.onnxRepo?.files, [
+      'encoder.onnx',
+      'decoder.onnx',
+      'tokens.txt',
+      'joiner.onnx',
+    ]);
+    expect(en.onnxRepo?.modelType, 'transducer');
+    expect(en.onnxRepo?.sherpaModelType, 'zipformer2');
   });
 
   test('wolof-small is the M9and2M fine-tune, not the parked dofbi pack', () {
