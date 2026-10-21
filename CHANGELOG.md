@@ -2,6 +2,10 @@
 
 - rework whatsapp vocal note sharing to avoid redownloading the model
 
+## 1.3.0 - 21 octobre 2026
+
+- include finetuned whisper on fon Fɔ̀ngbè -> french
+
 ## 1.2.3 - 16 octobre 2026
 
 - french whisper translation for better result

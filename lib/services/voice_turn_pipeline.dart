@@ -445,8 +445,9 @@ class VoiceTurnPipeline {
     switch (plan.strategy) {
       case VoiceSpeechStrategy.vosk:
       case VoiceSpeechStrategy.englishOutputFineTune:
+      case VoiceSpeechStrategy.frenchOutputFineTune:
       case VoiceSpeechStrategy.genericTranslate:
-        // Spoken English (or translated to English by Whisper)
+        // Spoken English / French ST output (or Whisper translate-to-English)
         sourceTranscript = raw;
         englishText = null;
         break;
@@ -623,8 +624,9 @@ class VoiceTurnPipeline {
     switch (plan.strategy) {
       case VoiceSpeechStrategy.vosk:
       case VoiceSpeechStrategy.englishOutputFineTune:
+      case VoiceSpeechStrategy.frenchOutputFineTune:
       case VoiceSpeechStrategy.genericTranslate:
-        // Spoken English (or translated to English by Whisper)
+        // Spoken English / French ST output (or Whisper translate-to-English)
         sourceTranscript = raw;
         englishText = null;
         break;

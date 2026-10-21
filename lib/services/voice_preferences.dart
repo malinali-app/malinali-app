@@ -39,8 +39,7 @@ class VoicePreferences {
   final bool useFastSttForEnFr;
 
   /// Voice sources we stand behind: FR/EN speech → Wolof (and other high-BLEU
-  /// targets). Low-resource speech sources (Wolof ASR cascade, etc.) are not
-  /// offered — quality was not shippable.
+  /// targets), plus Fon speech → French (pragmatic ST specialist).
   static const defaults = VoicePreferences(
     sourceIso: 'fr',
     targetIso: 'wo',
@@ -51,7 +50,7 @@ class VoicePreferences {
   );
 
   /// Spoken-language ISOs offered in voice setup / pair pickers.
-  static const allowedVoiceSourceIsos = {'en', 'fr'};
+  static const allowedVoiceSourceIsos = {'en', 'fr', 'fon'};
 
   Map<String, dynamic> toJson() => {
         'sourceIso': sourceIso,
@@ -116,11 +115,11 @@ class VoicePreferences {
 
 /// Spoken languages offered on the voice home.
 ///
-/// Only FR/EN as sources for now. Specialist packs (Wolof ASR, etc.) stay in
-/// [kWhisperSpecialistPacks] for tooling, but are not voice-pair sources.
+/// FR/EN use the generic multilingual Whisper. Fon uses the Fo→FR specialist.
 List<WhisperSpecialistPack> voiceSpokenLanguagePacks() {
-  return const [
-    WhisperSpecialistPack(
+  final fon = whisperSpecialistById('fon-small');
+  return [
+    const WhisperSpecialistPack(
       id: 'generic-en',
       labelFr: 'Anglais',
       iso: 'en',
@@ -130,7 +129,7 @@ List<WhisperSpecialistPack> voiceSpokenLanguagePacks() {
       upstreamRepo: 'openai/whisper',
       builtin: true,
     ),
-    WhisperSpecialistPack(
+    const WhisperSpecialistPack(
       id: 'generic-fr',
       labelFr: 'Français (générique)',
       iso: 'fr',
@@ -140,6 +139,7 @@ List<WhisperSpecialistPack> voiceSpokenLanguagePacks() {
       upstreamRepo: 'openai/whisper',
       builtin: true,
     ),
+    if (fon != null && fon.isDownloadable) fon,
   ];
 }
 

@@ -15,10 +15,11 @@ class AppSourceLanguage {
 }
 
 /// Spoken sources for voice onboarding. Wolof is a **target** only (EN/FR→WO);
-/// WO→EN/FR vocal quality is not offered.
+/// WO→EN/FR vocal quality is not offered. Fon is Fon audio → French only.
 const List<AppSourceLanguage> kSupportedSourceLanguages = [
   AppSourceLanguage(iso: 'en', name: 'English', nameEn: 'English'),
   AppSourceLanguage(iso: 'fr', name: 'Français', nameEn: 'French'),
+  AppSourceLanguage(iso: 'fon', name: 'Fon', nameEn: 'Fon'),
 ];
 
 /// Target language option shown in the language picker.
@@ -56,6 +57,18 @@ List<TargetLanguageOption> getAvailableTargetLanguages({
   bool includeEnFrReciprocal = true,
 }) {
   final src = sourceIso.toLowerCase();
+
+  // Fon speech-translation pack emits French only (no Marian hop).
+  if (src == 'fon') {
+    return _sortedByName(const [
+      TargetLanguageOption(
+        iso: 'fr',
+        name: 'Français',
+        nameEn: 'French',
+        qualityHint: 'ST (sem_sim gate)',
+      ),
+    ]);
+  }
 
   // Rule 1: Low-resource language (Wolof or others) -> strictly French & English
   if (src != 'fr' && src != 'en') {

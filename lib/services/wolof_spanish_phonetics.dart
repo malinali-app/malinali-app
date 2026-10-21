@@ -2,28 +2,26 @@
 ///
 /// Spanish is used because its 'j' (/x/) matches Wolof 'x', and its
 /// vowels 'u' and 'ñ' are native matches.
+///
+/// Replacements apply to the *original* letters only: order matters so that
+/// e.g. Wolof `x` → Spanish `j` is not then rewritten by `j` → `di`, and
+/// `ŋ` → `g` does not create a fake `gg` digraph.
 String wolofToSpanishPhonetics(String text) {
-  var out = text
+  return text
+      // Original Wolof `j` before `x` → `j`, so x-derived j stays Spanish /x/.
+      .replaceAll('j', 'di')
+      .replaceAll('J', 'Di')
+      .replaceAll('ë', 'eu')
+      .replaceAll('Ë', 'Eu')
+      // Digraph only; then `ŋ` → `g` so a lone g is never invented into `gg`.
+      .replaceAll('gg', 'gu')
+      .replaceAll('GG', 'GU')
+      .replaceAll('Gg', 'Gu')
       .replaceAll('x', 'j') // Wolof 'x' -> Spanish 'j' (/x/) - the core fix
       .replaceAll('X', 'J')
-      .replaceAll('ë', 'e') // Spanish has no schwa, 'e' is the closest pragmatic fit
-      .replaceAll('Ë', 'E')
       .replaceAll('c', 'ch') // Wolof 'c' (/c/) -> Spanish 'ch' (/tʃ/)
       .replaceAll('C', 'CH')
-      .replaceAll('j', 'y') // Wolof 'j' (/ɟ/) -> Spanish 'y' (/ʝ/)
-      .replaceAll('J', 'Y')
-      // Wolof 'ŋ' (velar nasal). User notes 'n' is almost silent.
-      // Pragmatically mapping to 'g' to avoid 'n' + 'g' sequence.
-      .replaceAll('ŋ', 'g') 
-      .replaceAll('Ŋ', 'G')
-      .replaceAll('ñ', 'ñ') // Native match
-      .replaceAll('Ñ', 'Ñ')
-      .replaceAll('u', 'u'); // Native match
-
-  // Handle pre-nasalized consonants pragmatically.
-  // The user notes 'n' is almost silent in some cases.
-  // For 'ng', we keep it as 'ng' because Spanish engines often 
-  // pronounce it as a single velar nasal when followed by a vowel.
-  
-  return out;
+      // Wolof 'ŋ' (velar nasal). Pragmatically mapping to 'g'.
+      .replaceAll('ŋ', 'g')
+      .replaceAll('Ŋ', 'G');
 }

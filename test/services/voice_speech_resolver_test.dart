@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:malinali/services/supported_languages.dart';
 import 'package:malinali/services/translation_model_service.dart';
 import 'package:malinali/services/voice_preferences.dart';
 import 'package:malinali/services/voice_speech_resolver.dart';
@@ -98,9 +99,40 @@ void main() {
     expect(plan.sourceToEnglish?.modelId, 'malinali-app/opus-mt-rw-fr');
   });
 
-  test('spoken language list is English and French only', () {
+  test('spoken language list includes English, French, and Fon', () {
     final packs = voiceSpokenLanguagePacks();
-    expect(packs.map((p) => p.id), ['generic-en', 'generic-fr']);
+    expect(packs.map((p) => p.id), ['generic-en', 'generic-fr', 'fon-small']);
+  });
+
+  test('Fon → French uses frenchOutputFineTune with fr prompt', () {
+    final plan = resolver.resolve(
+      const VoicePreferences(
+        sourceIso: 'fon',
+        targetIso: 'fr',
+        whisperSize: VoiceWhisperSize.quality,
+      ),
+    );
+    expect(plan.strategy, VoiceSpeechStrategy.frenchOutputFineTune);
+    expect(plan.specialist?.id, 'fon-small');
+    expect(plan.whisperLanguage, 'fr');
+    expect(plan.translateToEnglish, isFalse);
+    expect(plan.specialist?.emitsFrench, isTrue);
+    expect(plan.marianDownloads, isEmpty);
+  });
+
+  test('Fon targets only French', () {
+    final targets = getAvailableTargetLanguages(sourceIso: 'fon');
+    expect(targets.map((t) => t.iso), ['fr']);
+  });
+
+  test('Fon prefs are not migrated away', () {
+    final prefs = VoicePreferences.fromJson({
+      'sourceIso': 'fon',
+      'targetIso': 'fr',
+      'whisperSize': 'quality',
+    });
+    expect(prefs.sourceIso, 'fon');
+    expect(prefs.targetIso, 'fr');
   });
 
   test('voice English targets are sorted alphabetically', () {

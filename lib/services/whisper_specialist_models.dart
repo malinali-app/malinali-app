@@ -77,6 +77,7 @@ class WhisperSpecialistPack {
     this.onnxRepo,
     this.unavailableReason,
     this.emitsEnglish = false,
+    this.emitsFrench = false,
     this.builtin = false,
   });
 
@@ -109,6 +110,9 @@ class WhisperSpecialistPack {
 
   /// True when this pack's training targets are English (speech → English).
   final bool emitsEnglish;
+
+  /// True when training targets are French (speech → French), e.g. Fon ST.
+  final bool emitsFrench;
 
   /// True for English/French entries that use the generic multilingual pack.
   final bool builtin;
@@ -172,6 +176,18 @@ const List<WhisperSpecialistPack> kWhisperSpecialistPacks = [
     downloadSizeHint: 'environ 180 Mo',
     hasMarianOutbound: true,
     upstreamRepo: 'M9and2M/whisper-small-wolof',
+  ),
+  WhisperSpecialistPack(
+    id: 'fon-small',
+    labelFr: 'Fon → Français (small)',
+    iso: 'fon',
+    // No <|fon|> token; training forced French decoder (speech translation).
+    whisperLang: 'fr',
+    onnxRepo: WhisperOnnxRepo(repoId: 'malinali-app/whisper-small-fo-fr-onnx'),
+    downloadSizeHint: 'environ 180 Mo',
+    hasMarianOutbound: false,
+    upstreamRepo: 'malinali-app/whisper-small-fo-fr',
+    emitsFrench: true,
   ),
   WhisperSpecialistPack(
     id: 'dioula-tiny',
@@ -269,6 +285,12 @@ Language? languageForWhisperIso(String iso) {
         LocaleIntl(Locale.fromSubtags(languageCode: 'mos')),
         'Mòoré',
         'Moore',
+      );
+    case 'fon':
+      return Language(
+        LocaleIntl(Locale.fromSubtags(languageCode: 'fon')),
+        'Fon',
+        'Fon',
       );
     default:
       return null;

@@ -17,6 +17,11 @@ void main() {
       expect(isos.length, 2);
     });
 
+    test('Fon source only targets French', () {
+      final targets = getAvailableTargetLanguages(sourceIso: 'fon');
+      expect(targets.map((t) => t.iso).toList(), ['fr']);
+    });
+
     test('French source targets English, Wolof, and African languages with BLEU >= 30', () {
       final targets = getAvailableTargetLanguages(sourceIso: 'fr', minBleuScore: 30.0);
       final isos = targets.map((t) => t.iso).toList();

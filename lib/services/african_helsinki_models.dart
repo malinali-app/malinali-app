@@ -33,6 +33,12 @@ Language? africanLanguageByIso(String iso) {
         'Pulaar',
         'Pulaar',
       );
+    case 'fon':
+      return Language(
+        LocaleIntl(Locale.fromSubtags(languageCode: 'fon')),
+        'Fon',
+        'Fon',
+      );
     default:
       return null;
   }

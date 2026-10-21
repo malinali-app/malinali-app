@@ -8,6 +8,9 @@ enum VoiceSpeechStrategy {
   /// Fine-tune trained to emit English, then Marian English→target.
   englishOutputFineTune,
 
+  /// Fine-tune trained to emit French (e.g. Fon→FR ST); no Marian when target is FR.
+  frenchOutputFineTune,
+
   /// Fine-tune transcribes source language, Marian source→English, then English→target.
   transcribeThenMarianToEnglish,
 
@@ -81,6 +84,28 @@ class VoiceSpeechResolver {
   VoiceSpeechPlan resolve(VoicePreferences prefs) {
     final sourceIso = prefs.sourceIso.toLowerCase();
     final targetIso = prefs.targetIso.toLowerCase();
+
+    // Fon speech → French text (specialist ST). Product path is Fon→FR only.
+    if (sourceIso == 'fon') {
+      final pack = _downloadablePackForIso('fon');
+      if (pack != null && pack.emitsFrench && targetIso == 'fr') {
+        return VoiceSpeechPlan(
+          strategy: VoiceSpeechStrategy.frenchOutputFineTune,
+          whisperSize: prefs.whisperSize,
+          sourceIso: sourceIso,
+          whisperLanguage: pack.whisperLang,
+          specialist: pack,
+        );
+      }
+      // Unsupported target for Fon: still attach the pack so UI can explain.
+      return VoiceSpeechPlan(
+        strategy: VoiceSpeechStrategy.frenchOutputFineTune,
+        whisperSize: prefs.whisperSize,
+        sourceIso: sourceIso,
+        whisperLanguage: pack?.whisperLang ?? 'fr',
+        specialist: pack,
+      );
+    }
 
     // Spoken French: generic Whisper tiny/small with task=translate, so the
     // transcript is already English. No French→English Marian hop.
